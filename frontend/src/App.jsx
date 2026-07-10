@@ -1,122 +1,82 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
+import "./index.css";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import FarmerDashboard from "./pages/FarmerDashboard";
 
-function App() {
-  const [count, setCount] = useState(0)
-
+function Home() {
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <div className="app">
+      <header className="navbar">
+        <div className="logo"><span>🌱</span> FarmLink</div>
 
-      <div className="ticks"></div>
+        <nav>
+          <a href="#home">Home</a>
+          <a href="#how-it-works">How It Works</a>
+          <a href="#categories">Categories</a>
+        </nav>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
+        <div className="nav-buttons">
+        <Link className="login-btn" to="/login">Login</Link>
+        <Link className="register-btn" to="/register">Register</Link>
         </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+      </header>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+      <main id="home">
+        <section className="hero">
+          <div className="hero-text">
+            <p className="tag">DIRECT FARMER-TO-BUSINESS MARKETPLACE</p>
+            <h1>Fresh Produce. Fair Prices. Direct Connections.</h1>
+            <p className="hero-description">
+              FarmLink helps farmers sell their crop stock directly to verified
+              businesses, creating transparent agricultural trade.
+            </p>
+            <div className="hero-buttons">
+            <Link className="farmer-btn link-button" to="/farmer-dashboard">I am a Farmer</Link>
+              <Link className="business-btn link-button" to="/register">I am a Business</Link>
+            </div>
+          </div>
+
+          <div className="hero-card">
+            <div className="crop-icon">🥬</div>
+            <h2>Fresh from Farms</h2>
+            <p>Buy directly from verified farmers near you.</p>
+          </div>
+        </section>
+
+        <section className="stats">
+          <div><h2>500+</h2><p>Farmers</p></div>
+          <div><h2>200+</h2><p>Businesses</p></div>
+          <div><h2>1,000+</h2><p>Product Listings</p></div>
+          <div><h2>25+</h2><p>Crop Categories</p></div>
+        </section>
+
+        <section className="how-it-works" id="how-it-works">
+          <p className="section-tag">SIMPLE PROCESS</p>
+          <h2>How FarmLink Works</h2>
+
+          <div className="steps">
+            <article><span>1</span><h3>Farmers List Stock</h3><p>Add crop details, quantity, price, location, and images.</p></article>
+            <article><span>2</span><h3>Businesses Search</h3><p>Find products using category, price, and location.</p></article>
+            <article><span>3</span><h3>Order & Delivery</h3><p>Farmers accept orders, prepare stock, and complete delivery.</p></article>
+          </div>
+        </section>
+      </main>
+    </div>
+  );
 }
 
-export default App
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/farmer-dashboard" element={<FarmerDashboard />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+export default App;
