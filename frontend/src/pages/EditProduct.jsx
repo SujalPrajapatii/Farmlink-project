@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { api } from "../api";
 
 function EditProduct() {
   const { id } = useParams();
@@ -9,25 +10,61 @@ function EditProduct() {
     localStorage.getItem("farmlinkCurrentUser") || "null"
   );
 
-  const products = JSON.parse(
-    localStorage.getItem("farmlinkProducts") || "[]"
-  );
+  const [formData, setFormData] = useState({
+    name: "",
+    category: "",
+    quantity: "",
+    unit: "kg",
+    price: "",
+    location: "",
+    image: "",
+  });
 
-  const selectedProduct = products.find(
-    (product) => String(product.id) === String(id)
-  );
+  const [loading, setLoading] = useState(true);
+  const [productFound, setProductFound] = useState(true);
 
-  const [formData, setFormData] = useState(
-    selectedProduct || {
-      name: "",
-      category: "",
-      quantity: "",
-      unit: "kg",
-      price: "",
-      location: "",
-      image: "",
+  useEffect(() => {
+    async function loadProduct() {
+      // User is not logged in as farmer
+      if (!currentUser || currentUser.accountType !== "farmer") {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        // Get only products owned by logged-in farmer
+        const products = await api("/products/mine");
+
+        // Find product matching ID from URL
+        const product = products.find(
+          (item) => String(item.id) === String(id)
+        );
+
+        if (!product) {
+          setProductFound(false);
+          return;
+        }
+
+        // Fill form fields with existing product data
+        setFormData({
+          name: product.name || "",
+          category: product.category || "",
+          quantity: product.quantity || "",
+          unit: product.unit || "kg",
+          price: product.price || "",
+          location: product.location || "",
+          image: product.image || "",
+        });
+      } catch (error) {
+        alert(error.message);
+        setProductFound(false);
+      } finally {
+        setLoading(false);
+      }
     }
-  );
+
+    loadProduct();
+  }, [id]);
 
   function handleChange(event) {
     setFormData({
@@ -36,38 +73,57 @@ function EditProduct() {
     });
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
 
-    const updatedProducts = products.map((product) => {
-      if (String(product.id) === String(id)) {
-        return {
-          ...product,
-          ...formData,
-          quantity: Number(formData.quantity),
-          price: Number(formData.price),
-        };
-      }
+    try {
+      await api(`/products/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(formData),
+      });
 
-      return product;
-    });
-
-    localStorage.setItem("farmlinkProducts", JSON.stringify(updatedProducts));
-    alert("Product updated successfully!");
-    navigate("/farmer-dashboard");
+      alert("Product updated successfully!");
+      navigate("/farmer-dashboard");
+    } catch (error) {
+      alert(error.message);
+    }
   }
 
-  if (
-    !currentUser ||
-    currentUser.accountType !== "farmer" ||
-    !selectedProduct ||
-    selectedProduct.ownerEmail !== currentUser.email
-  ) {
+  // User is not farmer or not logged in
+  if (!currentUser || currentUser.accountType !== "farmer") {
     return (
       <div className="auth-page">
         <div className="auth-card">
           <h1>Access denied</h1>
+          <p>Please log in as a farmer to edit products.</p>
+
+          <Link className="farmer-btn" to="/login">
+            Go to Login
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // API is loading existing product data
+  if (loading) {
+    return (
+      <div className="auth-page">
+        <div className="auth-card">
+          <h1>Loading product...</h1>
+        </div>
+      </div>
+    );
+  }
+
+  // Product ID is invalid or belongs to another farmer
+  if (!productFound) {
+    return (
+      <div className="auth-page">
+        <div className="auth-card">
+          <h1>Product not found</h1>
           <p>You cannot edit this product.</p>
+
           <Link className="farmer-btn" to="/farmer-dashboard">
             Back to Dashboard
           </Link>
@@ -152,7 +208,7 @@ function EditProduct() {
           required
         />
 
-        <label>Image URL</label>
+        <label>Image URL (optional)</label>
         <input
           type="url"
           name="image"

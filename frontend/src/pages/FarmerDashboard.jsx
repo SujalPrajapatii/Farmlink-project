@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { api } from "../api";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 function FarmerDashboard() {
@@ -8,13 +9,16 @@ function FarmerDashboard() {
     localStorage.getItem("farmlinkCurrentUser") || "null"
   );
 
-  const [products, setProducts] = useState(() =>
-    JSON.parse(localStorage.getItem("farmlinkProducts") || "[]")
-  );
+  const [products, setProducts] = useState([]);
 
-  const [orders, setOrders] = useState(() =>
-    JSON.parse(localStorage.getItem("farmlinkOrders") || "[]")
-  );
+  const [orders, setOrders] = useState([]);
+
+  useEffect(() => {
+    if (currentUser) {
+      loadProducts();
+      loadOrders();
+    }
+  }, []);
 
   if (!currentUser || currentUser.accountType !== "farmer") {
     return (
@@ -51,43 +55,62 @@ function FarmerDashboard() {
     0
   );
 
-  function saveProducts(updatedProducts) {
-    setProducts(updatedProducts);
-    localStorage.setItem("farmlinkProducts", JSON.stringify(updatedProducts));
+  async function loadProducts() {
+    try {
+      const data = await api("/products/mine");
+      setProducts(data);
+    } catch (error) {
+      alert(error.message);
+    }
   }
-
-  function saveOrders(updatedOrders) {
-    setOrders(updatedOrders);
-    localStorage.setItem("farmlinkOrders", JSON.stringify(updatedOrders));
+  
+  async function loadOrders() {
+    try {
+      const data = await api("/orders/mine");
+      setOrders(data);
+    } catch (error) {
+      alert(error.message);
+    }
   }
 
   function handleLogout() {
+    localStorage.removeItem("farmlinkToken");
     localStorage.removeItem("farmlinkCurrentUser");
     navigate("/");
   }
 
-  function deleteProduct(productId) {
-    const confirmed = window.confirm("Do you want to delete this product?");
-
-    if (!confirmed) return;
-
-    const updatedProducts = products.filter(
-      (product) => product.id !== productId
+  async function deleteProduct(productId) {
+    const confirmed = window.confirm(
+      "Do you want to delete this product?"
     );
-
-    saveProducts(updatedProducts);
+  
+    if (!confirmed) return;
+  
+    try {
+      await api(`/products/${productId}`, {
+        method: "DELETE",
+      });
+  
+      alert("Product deleted successfully.");
+      loadProducts();
+    } catch (error) {
+      alert(error.message);
+    }
   }
 
-  function updateOrderStatus(orderId, status) {
-    const updatedOrders = orders.map((order) => {
-      if (order.id === orderId) {
-        return { ...order, status };
-      }
-
-      return order;
-    });
-
-    saveOrders(updatedOrders);
+  async function updateOrderStatus(orderId, status) {
+    try {
+      await api(`/orders/${orderId}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+  
+      alert("Order updated successfully.");
+      loadOrders();
+      loadProducts();
+    } catch (error) {
+      alert(error.message);
+    }
   }
 
   return (

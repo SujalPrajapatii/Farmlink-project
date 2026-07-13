@@ -1,3 +1,4 @@
+import { api } from "../api";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -16,31 +17,34 @@ function Login() {
     });
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) 
+  {
     event.preventDefault();
 
-    const users = JSON.parse(localStorage.getItem("farmlinkUsers") || "[]");
-
-    const user = users.find(
-      (savedUser) =>
-        savedUser.email === formData.email.toLowerCase() &&
-        savedUser.password === formData.password
-    );
-
-    if (!user) {
-      alert("Invalid email or password.");
-      return;
-    }
-
-    localStorage.setItem("farmlinkCurrentUser", JSON.stringify(user));
-    alert("Login successful!");
-
-    if (user.accountType === "farmer") {
-      navigate("/farmer-dashboard");
-    } else if (user.accountType === "business") {
-      navigate("/business-dashboard");
-    } else {
-      navigate("/admin-dashboard");
+    try {
+      const result = await api("/auth/login", {
+        method: "POST",
+        body: JSON.stringify(formData),
+      });
+    
+      localStorage.setItem("farmlinkToken", result.token);
+    
+      localStorage.setItem(
+        "farmlinkCurrentUser",
+        JSON.stringify(result.user)
+      );
+    
+      alert("Login successful!");
+    
+      if (result.user.accountType === "farmer") {
+        navigate("/farmer-dashboard");
+      } else if (result.user.accountType === "business") {
+        navigate("/business-dashboard");
+      } else {
+        navigate("/admin-dashboard");
+      }
+    } catch (error) {
+      alert(error.message);
     }
   }
 

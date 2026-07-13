@@ -1,3 +1,4 @@
+import { api } from "../api";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -25,28 +26,21 @@ function AddProduct() {
     });
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) 
+  {
     event.preventDefault();
 
-    const products = JSON.parse(
-      localStorage.getItem("farmlinkProducts") || "[]"
-    );
-
-    const newProduct = {
-      ...formData,
-      id: Date.now(),
-      ownerEmail: currentUser.email,
-      ownerName: currentUser.name,
-      createdAt: new Date().toLocaleDateString(),
-    };
-
-    localStorage.setItem(
-      "farmlinkProducts",
-      JSON.stringify([...products, newProduct])
-    );
-
-    alert("Product added successfully!");
-    navigate("/farmer-dashboard");
+    try {
+      await api("/products", {
+        method: "POST",
+        body: JSON.stringify(formData),
+      });
+    
+      alert("Product added successfully!");
+      navigate("/farmer-dashboard");
+    } catch (error) {
+      alert(error.message);
+    }
   }
 
   if (!currentUser || currentUser.accountType !== "farmer") {

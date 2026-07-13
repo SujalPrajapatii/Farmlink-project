@@ -1,5 +1,7 @@
+import { api } from "../api";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+
 
 function Register() {
   const navigate = useNavigate();
@@ -18,35 +20,32 @@ function Register() {
     });
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) 
+  {
     event.preventDefault();
 
-    const users = JSON.parse(localStorage.getItem("farmlinkUsers") || "[]");
-
-    const alreadyExists = users.some(
-      (user) => user.email.toLowerCase() === formData.email.toLowerCase()
-    );
-
-    if (alreadyExists) {
-      alert("An account with this email already exists.");
-      return;
-    }
-
-    const newUser = {
-      ...formData,
-      email: formData.email.toLowerCase(),
-      id: Date.now(),
-    };
-
-    localStorage.setItem("farmlinkUsers", JSON.stringify([...users, newUser]));
-    localStorage.setItem("farmlinkCurrentUser", JSON.stringify(newUser));
-
-    alert("Account created successfully!");
-
-    if (newUser.accountType === "farmer") {
-      navigate("/farmer-dashboard");
-    } else {
-      navigate("/business-dashboard");
+    try {
+      const result = await api("/auth/register", {
+        method: "POST",
+        body: JSON.stringify(formData),
+      });
+    
+      localStorage.setItem("farmlinkToken", result.token);
+    
+      localStorage.setItem(
+        "farmlinkCurrentUser",
+        JSON.stringify(result.user)
+      );
+    
+      alert("Account created successfully!");
+    
+      if (result.user.accountType === "farmer") {
+        navigate("/farmer-dashboard");
+      } else {
+        navigate("/business-dashboard");
+      }
+    } catch (error) {
+      alert(error.message);
     }
   }
 

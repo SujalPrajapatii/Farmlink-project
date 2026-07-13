@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { api } from "../api";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 function BusinessDashboard() {
@@ -8,16 +9,19 @@ function BusinessDashboard() {
     localStorage.getItem("farmlinkCurrentUser") || "null"
   );
 
-  const [products, setProducts] = useState(() =>
-    JSON.parse(localStorage.getItem("farmlinkProducts") || "[]")
-  );
+  const [products, setProducts] = useState([]);
 
-  const [orders, setOrders] = useState(() =>
-    JSON.parse(localStorage.getItem("farmlinkOrders") || "[]")
-  );
+  const [orders, setOrders] = useState([]);
 
   const [search, setSearch] = useState("");
   const [quantity, setQuantity] = useState({});
+
+  useEffect(() => {
+    if (currentUser) {
+      loadProducts();
+      loadOrders();
+    }
+  }, []);
 
   if (!currentUser || currentUser.accountType !== "business") {
     return (
@@ -49,53 +53,54 @@ function BusinessDashboard() {
     (order) => order.businessEmail === currentUser.email
   );
 
+  async function loadProducts() {
+    try {
+      const data = await api("/products");
+      setProducts(data);
+    } catch (error) {
+      alert(error.message);
+    }
+  }
+  
+  async function loadOrders() {
+    try {
+      const data = await api("/orders/mine");
+      setOrders(data);
+    } catch (error) {
+      alert(error.message);
+    }
+  }
+
   function handleLogout() {
+    localStorage.removeItem("farmlinkToken");
     localStorage.removeItem("farmlinkCurrentUser");
     navigate("/");
   }
 
-  function placeOrder(product) {
+  async function placeOrder(product) {
     const orderQuantity = Number(quantity[product.id] || 1);
-
+  
     if (orderQuantity < 1 || orderQuantity > Number(product.quantity)) {
       alert(`Enter a quantity between 1 and ${product.quantity}.`);
       return;
     }
-
-    const newOrder = {
-      id: Date.now(),
-      productId: product.id,
-      productName: product.name,
-      quantity: orderQuantity,
-      total: orderQuantity * Number(product.price),
-      businessName: currentUser.name,
-      businessEmail: currentUser.email,
-      farmerName: product.ownerName,
-      farmerEmail: product.ownerEmail,
-      status: "Pending",
-      createdAt: new Date().toLocaleDateString(),
-    };
-
-    const updatedProducts = products.map((savedProduct) => {
-      if (savedProduct.id === product.id) {
-        return {
-          ...savedProduct,
-          quantity: Number(savedProduct.quantity) - orderQuantity,
-        };
-      }
-
-      return savedProduct;
-    });
-
-    const updatedOrders = [...orders, newOrder];
-
-    setProducts(updatedProducts);
-    setOrders(updatedOrders);
-
-    localStorage.setItem("farmlinkProducts", JSON.stringify(updatedProducts));
-    localStorage.setItem("farmlinkOrders", JSON.stringify(updatedOrders));
-
-    alert("Order placed successfully!");
+  
+    try {
+      await api("/orders", {
+        method: "POST",
+        body: JSON.stringify({
+          productId: product.id,
+          quantity: orderQuantity,
+        }),
+      });
+  
+      alert("Order placed successfully!");
+  
+      loadProducts();
+      loadOrders();
+    } catch (error) {
+      alert(error.message);
+    }
   }
 
   return (
