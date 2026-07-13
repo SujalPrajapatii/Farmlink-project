@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 function FarmerDashboard() {
@@ -7,24 +8,58 @@ function FarmerDashboard() {
     localStorage.getItem("farmlinkCurrentUser") || "null"
   );
 
-  const allProducts = JSON.parse(
-    localStorage.getItem("farmlinkProducts") || "[]"
+  const [products, setProducts] = useState(() =>
+    JSON.parse(localStorage.getItem("farmlinkProducts") || "[]")
   );
 
-  const farmerProducts = currentUser
-    ? allProducts.filter((product) => product.ownerEmail === currentUser.email)
-    : [];
+  const [orders, setOrders] = useState(() =>
+    JSON.parse(localStorage.getItem("farmlinkOrders") || "[]")
+  );
 
-  const allOrders = JSON.parse(localStorage.getItem("farmlinkOrders") || "[]");
+  if (!currentUser || currentUser.accountType !== "farmer") {
+    return (
+      <div className="auth-page">
+        <div className="auth-card">
+          <h1>Access denied</h1>
+          <p>Please log in as a farmer to continue.</p>
+          <Link className="farmer-btn" to="/login">
+            Go to Login
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
-  const farmerOrders = currentUser
-    ? allOrders.filter((order) => order.farmerEmail === currentUser.email)
-    : [];
+  const farmerProducts = products.filter(
+    (product) => product.ownerEmail === currentUser.email
+  );
 
-  const totalSales = farmerOrders.reduce(
+  const farmerOrders = orders.filter(
+    (order) => order.farmerEmail === currentUser.email
+  );
+
+  const pendingOrders = farmerOrders.filter(
+    (order) => order.status === "Pending"
+  );
+
+  const completedOrders = farmerOrders.filter(
+    (order) => order.status === "Delivered"
+  );
+
+  const totalSales = completedOrders.reduce(
     (total, order) => total + Number(order.total),
     0
   );
+
+  function saveProducts(updatedProducts) {
+    setProducts(updatedProducts);
+    localStorage.setItem("farmlinkProducts", JSON.stringify(updatedProducts));
+  }
+
+  function saveOrders(updatedOrders) {
+    setOrders(updatedOrders);
+    localStorage.setItem("farmlinkOrders", JSON.stringify(updatedOrders));
+  }
 
   function handleLogout() {
     localStorage.removeItem("farmlinkCurrentUser");
@@ -36,26 +71,23 @@ function FarmerDashboard() {
 
     if (!confirmed) return;
 
-    const updatedProducts = allProducts.filter(
+    const updatedProducts = products.filter(
       (product) => product.id !== productId
     );
 
-    localStorage.setItem("farmlinkProducts", JSON.stringify(updatedProducts));
-    window.location.reload();
+    saveProducts(updatedProducts);
   }
 
-  if (!currentUser || currentUser.accountType !== "farmer") {
-    return (
-      <div className="auth-page">
-        <div className="auth-card">
-          <h1>Access denied</h1>
-          <p>Please log in as a farmer to view this page.</p>
-          <Link className="farmer-btn" to="/login">
-            Go to Login
-          </Link>
-        </div>
-      </div>
-    );
+  function updateOrderStatus(orderId, status) {
+    const updatedOrders = orders.map((order) => {
+      if (order.id === orderId) {
+        return { ...order, status };
+      }
+
+      return order;
+    });
+
+    saveOrders(updatedOrders);
   }
 
   return (
@@ -65,6 +97,7 @@ function FarmerDashboard() {
         <Link to="/farmer-dashboard">Dashboard</Link>
         <a href="#products">My Products</a>
         <a href="#orders">Orders</a>
+
         <button className="sidebar-logout" onClick={handleLogout}>
           Logout
         </button>
@@ -75,7 +108,7 @@ function FarmerDashboard() {
           <div>
             <p className="section-tag">FARMER DASHBOARD</p>
             <h1>Welcome, {currentUser.name}!</h1>
-            <p>Manage your crop listings, stock, and customer orders.</p>
+            <p>Manage your product listings and buyer orders.</p>
           </div>
 
           <Link className="register-btn" to="/add-product">
@@ -91,12 +124,12 @@ function FarmerDashboard() {
 
           <div className="dashboard-stat-card">
             <p>Pending Orders</p>
-            <h2>{farmerOrders.length}</h2>
+            <h2>{pendingOrders.length}</h2>
           </div>
 
           <div className="dashboard-stat-card">
             <p>Completed Orders</p>
-            <h2>0</h2>
+            <h2>{completedOrders.length}</h2>
           </div>
 
           <div className="dashboard-stat-card">
@@ -117,7 +150,8 @@ function FarmerDashboard() {
             <div className="empty-product">
               <div>📦</div>
               <h3>No products added yet</h3>
-              <p>Add your first crop product so businesses can find and buy it.</p>
+              <p>Add your first crop product so businesses can find it.</p>
+
               <Link className="register-btn" to="/add-product">
                 + Add Your First Product
               </Link>
@@ -127,23 +161,38 @@ function FarmerDashboard() {
               {farmerProducts.map((product) => (
                 <article className="product-card" key={product.id}>
                   <img
-                    src={product.image || "https://placehold.co/600x400?text=FarmLink"}
+                    src={
+                      product.image ||
+                      "https://placehold.co/600x400?text=FarmLink"
+                    }
                     alt={product.name}
                   />
+
                   <h3>{product.name}</h3>
                   <p>{product.category}</p>
                   <p>
-                    {product.quantity} {product.unit}
+                    Available: {product.quantity} {product.unit}
                   </p>
-                  <strong>₹{product.price} / {product.unit}</strong>
+                  <strong>
+                    ₹{product.price} / {product.unit}
+                  </strong>
                   <p>{product.location}</p>
 
-                  <button
-                    className="delete-btn"
-                    onClick={() => deleteProduct(product.id)}
-                  >
-                    Delete
-                  </button>
+                  <div className="product-actions">
+                    <Link
+                      className="edit-btn"
+                      to={`/edit-product/${product.id}`}
+                    >
+                      Edit
+                    </Link>
+
+                    <button
+                      className="delete-btn"
+                      onClick={() => deleteProduct(product.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </article>
               ))}
             </div>
@@ -158,15 +207,55 @@ function FarmerDashboard() {
           ) : (
             <div className="order-list">
               {farmerOrders.map((order) => (
-                <div className="order-card" key={order.id}>
+                <article className="order-card" key={order.id}>
                   <div>
                     <h3>{order.productName}</h3>
                     <p>
                       Buyer: {order.businessName} · Quantity: {order.quantity}
                     </p>
+                    <p>Order Date: {order.createdAt}</p>
                   </div>
-                  <strong>₹{order.total}</strong>
-                </div>
+
+                  <div className="order-right">
+                    <strong>₹{order.total}</strong>
+                    <span className={`status status-${order.status.toLowerCase()}`}>
+                      {order.status}
+                    </span>
+
+                    {order.status === "Pending" && (
+                      <div className="order-actions">
+                        <button
+                          className="accept-btn"
+                          onClick={() =>
+                            updateOrderStatus(order.id, "Accepted")
+                          }
+                        >
+                          Accept
+                        </button>
+
+                        <button
+                          className="cancel-btn"
+                          onClick={() =>
+                            updateOrderStatus(order.id, "Cancelled")
+                          }
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+
+                    {order.status === "Accepted" && (
+                      <button
+                        className="deliver-btn"
+                        onClick={() =>
+                          updateOrderStatus(order.id, "Delivered")
+                        }
+                      >
+                        Mark Delivered
+                      </button>
+                    )}
+                  </div>
+                </article>
               ))}
             </div>
           )}

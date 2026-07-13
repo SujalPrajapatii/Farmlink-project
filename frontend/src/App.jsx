@@ -6,6 +6,7 @@ import FarmerDashboard from "./pages/FarmerDashboard";
 import BusinessDashboard from "./pages/BusinessDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import AddProduct from "./pages/AddProduct";
+import EditProduct from "./pages/EditProduct";
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
         <Route path="/business-dashboard" element={<BusinessDashboard />} />
         <Route path="/admin-dashboard" element={<AdminDashboard />} />
         <Route path="/add-product" element={<AddProduct />} />
+        <Route path="/edit-product/:id" element={<EditProduct />} />
       </Routes>
     </BrowserRouter>
   );
