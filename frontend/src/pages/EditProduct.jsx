@@ -10,6 +10,8 @@ function EditProduct() {
     localStorage.getItem("farmlinkCurrentUser") || "null"
   );
 
+  const accountType = currentUser?.accountType;
+
   const [formData, setFormData] = useState({
     name: "",
     category: "",
@@ -24,18 +26,12 @@ function EditProduct() {
   const [productFound, setProductFound] = useState(true);
 
   useEffect(() => {
-    async function loadProduct() {
-      // User is not logged in as farmer
-      if (!currentUser || currentUser.accountType !== "farmer") {
-        setLoading(false);
-        return;
-      }
+    if (accountType !== "farmer") return;
 
+    async function loadProduct() {
       try {
-        // Get only products owned by logged-in farmer
         const products = await api("/products/mine");
 
-        // Find product matching ID from URL
         const product = products.find(
           (item) => String(item.id) === String(id)
         );
@@ -45,7 +41,6 @@ function EditProduct() {
           return;
         }
 
-        // Fill form fields with existing product data
         setFormData({
           name: product.name || "",
           category: product.category || "",
@@ -64,7 +59,7 @@ function EditProduct() {
     }
 
     loadProduct();
-  }, [id]);
+  }, [id, accountType]);
 
   function handleChange(event) {
     setFormData({
@@ -89,8 +84,7 @@ function EditProduct() {
     }
   }
 
-  // User is not farmer or not logged in
-  if (!currentUser || currentUser.accountType !== "farmer") {
+  if (!currentUser || accountType !== "farmer") {
     return (
       <div className="auth-page">
         <div className="auth-card">
@@ -105,7 +99,6 @@ function EditProduct() {
     );
   }
 
-  // API is loading existing product data
   if (loading) {
     return (
       <div className="auth-page">
@@ -116,7 +109,6 @@ function EditProduct() {
     );
   }
 
-  // Product ID is invalid or belongs to another farmer
   if (!productFound) {
     return (
       <div className="auth-page">
@@ -173,6 +165,7 @@ function EditProduct() {
           value={formData.quantity}
           onChange={handleChange}
           min="0"
+          step="1"
           required
         />
 
@@ -196,6 +189,7 @@ function EditProduct() {
           value={formData.price}
           onChange={handleChange}
           min="1"
+          step="0.01"
           required
         />
 

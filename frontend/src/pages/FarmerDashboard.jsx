@@ -9,23 +9,38 @@ function FarmerDashboard() {
     localStorage.getItem("farmlinkCurrentUser") || "null"
   );
 
-  const [products, setProducts] = useState([]);
+  const accountType = currentUser?.accountType;
 
+  const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
 
   useEffect(() => {
-    if (currentUser) {
-      loadProducts();
-      loadOrders();
-    }
-  }, []);
+    if (accountType !== "farmer") return;
 
-  if (!currentUser || currentUser.accountType !== "farmer") {
+    async function loadDashboardData() {
+      try {
+        const [productsData, ordersData] = await Promise.all([
+          api("/products/mine"),
+          api("/orders/mine"),
+        ]);
+
+        setProducts(productsData);
+        setOrders(ordersData);
+      } catch (error) {
+        alert(error.message);
+      }
+    }
+
+    loadDashboardData();
+  }, [accountType]);
+
+  if (!currentUser || accountType !== "farmer") {
     return (
       <div className="auth-page">
         <div className="auth-card">
           <h1>Access denied</h1>
           <p>Please log in as a farmer to continue.</p>
+
           <Link className="farmer-btn" to="/login">
             Go to Login
           </Link>
@@ -34,19 +49,11 @@ function FarmerDashboard() {
     );
   }
 
-  const farmerProducts = products.filter(
-    (product) => product.ownerEmail === currentUser.email
-  );
-
-  const farmerOrders = orders.filter(
-    (order) => order.farmerEmail === currentUser.email
-  );
-
-  const pendingOrders = farmerOrders.filter(
+  const pendingOrders = orders.filter(
     (order) => order.status === "Pending"
   );
 
-  const completedOrders = farmerOrders.filter(
+  const completedOrders = orders.filter(
     (order) => order.status === "Delivered"
   );
 
@@ -63,7 +70,7 @@ function FarmerDashboard() {
       alert(error.message);
     }
   }
-  
+
   async function loadOrders() {
     try {
       const data = await api("/orders/mine");
@@ -83,16 +90,16 @@ function FarmerDashboard() {
     const confirmed = window.confirm(
       "Do you want to delete this product?"
     );
-  
+
     if (!confirmed) return;
-  
+
     try {
       await api(`/products/${productId}`, {
         method: "DELETE",
       });
-  
+
       alert("Product deleted successfully.");
-      loadProducts();
+      await loadProducts();
     } catch (error) {
       alert(error.message);
     }
@@ -104,10 +111,9 @@ function FarmerDashboard() {
         method: "PATCH",
         body: JSON.stringify({ status }),
       });
-  
+
       alert("Order updated successfully.");
-      loadOrders();
-      loadProducts();
+      await Promise.all([loadOrders(), loadProducts()]);
     } catch (error) {
       alert(error.message);
     }
@@ -142,7 +148,7 @@ function FarmerDashboard() {
         <section className="dashboard-stats">
           <div className="dashboard-stat-card">
             <p>Active Products</p>
-            <h2>{farmerProducts.length}</h2>
+            <h2>{products.length}</h2>
           </div>
 
           <div className="dashboard-stat-card">
@@ -169,7 +175,7 @@ function FarmerDashboard() {
             </Link>
           </div>
 
-          {farmerProducts.length === 0 ? (
+          {products.length === 0 ? (
             <div className="empty-product">
               <div>📦</div>
               <h3>No products added yet</h3>
@@ -181,7 +187,7 @@ function FarmerDashboard() {
             </div>
           ) : (
             <div className="product-grid">
-              {farmerProducts.map((product) => (
+              {products.map((product) => (
                 <article className="product-card" key={product.id}>
                   <img
                     src={
@@ -225,23 +231,28 @@ function FarmerDashboard() {
         <section className="product-section" id="orders">
           <h2>Orders Received</h2>
 
-          {farmerOrders.length === 0 ? (
+          {orders.length === 0 ? (
             <p className="muted-text">You have not received any orders yet.</p>
           ) : (
             <div className="order-list">
-              {farmerOrders.map((order) => (
+              {orders.map((order) => (
                 <article className="order-card" key={order.id}>
                   <div>
                     <h3>{order.productName}</h3>
                     <p>
                       Buyer: {order.businessName} · Quantity: {order.quantity}
                     </p>
-                    <p>Order Date: {order.createdAt}</p>
+                    <p>
+                      Order Date:{" "}
+                      {new Date(order.createdAt).toLocaleDateString()}
+                    </p>
                   </div>
 
                   <div className="order-right">
                     <strong>₹{order.total}</strong>
-                    <span className={`status status-${order.status.toLowerCase()}`}>
+                    <span
+                      className={`status status-${order.status.toLowerCase()}`}
+                    >
                       {order.status}
                     </span>
 

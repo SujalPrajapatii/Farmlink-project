@@ -1,6 +1,21 @@
 import pool from "../config/db.js";
 
-// 1. Farmer adds a new product
+// Returns true only for valid numbers greater than zero.
+// Valid: 1, 10, 25.5
+// Invalid: 0, -2, "hello", empty value
+const isPositiveNumber = (value) =>
+  Number.isFinite(Number(value)) && Number(value) > 0;
+
+// Returns true for zero or positive numbers.
+// This is useful during editing because quantity 0 means "out of stock".
+const isNonNegativeNumber = (value) =>
+  Number.isFinite(Number(value)) && Number(value) >= 0;
+
+// Checks that a value is a non-empty text string.
+const isNonEmptyString = (value) =>
+  typeof value === "string" && value.trim().length > 0;
+
+// Farmer adds a new product.
 export const createProduct = async (req, res) => {
   try {
     const {
@@ -13,29 +28,34 @@ export const createProduct = async (req, res) => {
       image,
     } = req.body;
 
-    // Check that required product fields were sent
-    if (!name || !category || !quantity || !unit || !price || !location) {
+    // Check all required text fields.
+    if (
+      !isNonEmptyString(name) ||
+      !isNonEmptyString(category) ||
+      !isNonEmptyString(unit) ||
+      !isNonEmptyString(location)
+    ) {
       return res.status(400).json({
-        message: "Please fill all required product fields.",
+        message: "Product name, category, unit, and location are required.",
       });
     }
 
-    // Quantity must be greater than zero
-    if (Number(quantity) <= 0) {
+    // Check quantity.
+    if (!isPositiveNumber(quantity)) {
       return res.status(400).json({
-        message: "Quantity must be greater than zero.",
+        message: "Quantity must be a positive number.",
       });
     }
 
-    // Price must be greater than zero
-    if (Number(price) <= 0) {
+    // Check price.
+    if (!isPositiveNumber(price)) {
       return res.status(400).json({
-        message: "Price must be greater than zero.",
+        message: "Price must be a positive number.",
       });
     }
 
-    // req.user.id comes from authMiddleware.
-    // It is the ID of the farmer who is currently logged in.
+    // This comes from the JWT token, not from the frontend.
+    // Therefore, a farmer cannot create a product for another farmer.
     const farmerId = req.user.id;
 
     const [result] = await pool.execute(
@@ -45,29 +65,29 @@ export const createProduct = async (req, res) => {
       [
         farmerId,
         name.trim(),
-        category,
-        quantity,
-        unit,
-        price,
+        category.trim(),
+        Number(quantity),
+        unit.trim(),
+        Number(price),
         location.trim(),
-        image || null,
+        isNonEmptyString(image) ? image.trim() : null,
       ]
     );
 
-    res.status(201).json({
+    return res.status(201).json({
       message: "Product added successfully.",
       productId: result.insertId,
     });
   } catch (error) {
     console.error("Create product error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Could not add product.",
     });
   }
 };
 
-// 2. Business sees all products that are still available
+// Business buyers see available products.
 export const getAllProducts = async (req, res) => {
   try {
     const [products] = await pool.execute(`
@@ -81,25 +101,24 @@ export const getAllProducts = async (req, res) => {
         p.location,
         p.image_url AS image,
         p.created_at AS createdAt,
-        u.name AS ownerName,
-        u.email AS ownerEmail
+        u.name AS ownerName
       FROM products p
       JOIN users u ON p.farmer_id = u.id
       WHERE p.quantity > 0
       ORDER BY p.created_at DESC
     `);
 
-    res.json(products);
+    return res.json(products);
   } catch (error) {
     console.error("Get all products error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Could not get products.",
     });
   }
 };
 
-// 3. Farmer sees only their own products
+// Farmer sees only products they own.
 export const getMyProducts = async (req, res) => {
   try {
     const farmerId = req.user.id;
@@ -121,20 +140,20 @@ export const getMyProducts = async (req, res) => {
       [farmerId]
     );
 
-    res.json(products);
+    return res.json(products);
   } catch (error) {
     console.error("Get my products error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Could not get your products.",
     });
   }
 };
 
-// 4. Farmer edits one of their own products
+// Farmer updates one of their own products.
 export const updateProduct = async (req, res) => {
   try {
-    const productId = req.params.id;
+    const productId = Number(req.params.id);
 
     const {
       name,
@@ -146,21 +165,33 @@ export const updateProduct = async (req, res) => {
       image,
     } = req.body;
 
-    if (!name || !category || !quantity || !unit || !price || !location) {
+    if (!Number.isInteger(productId) || productId <= 0) {
       return res.status(400).json({
-        message: "Please fill all required product fields.",
+        message: "Invalid product ID.",
       });
     }
 
-    if (Number(quantity) < 0) {
+    if (
+      !isNonEmptyString(name) ||
+      !isNonEmptyString(category) ||
+      !isNonEmptyString(unit) ||
+      !isNonEmptyString(location)
+    ) {
       return res.status(400).json({
-        message: "Quantity cannot be negative.",
+        message: "Product name, category, unit, and location are required.",
       });
     }
 
-    if (Number(price) <= 0) {
+    // Zero is allowed while editing.
+    if (!isNonNegativeNumber(quantity)) {
       return res.status(400).json({
-        message: "Price must be greater than zero.",
+        message: "Quantity must be zero or a positive number.",
+      });
+    }
+
+    if (!isPositiveNumber(price)) {
+      return res.status(400).json({
+        message: "Price must be a positive number.",
       });
     }
 
@@ -179,42 +210,46 @@ export const updateProduct = async (req, res) => {
       WHERE id = ? AND farmer_id = ?`,
       [
         name.trim(),
-        category,
-        quantity,
-        unit,
-        price,
+        category.trim(),
+        Number(quantity),
+        unit.trim(),
+        Number(price),
         location.trim(),
-        image || null,
+        isNonEmptyString(image) ? image.trim() : null,
         productId,
         farmerId,
       ]
     );
 
-    // affectedRows = 0 means:
-    // product does not exist OR product belongs to another farmer
     if (result.affectedRows === 0) {
       return res.status(404).json({
         message: "Product not found or you cannot edit it.",
       });
     }
 
-    res.json({
+    return res.json({
       message: "Product updated successfully.",
     });
   } catch (error) {
     console.error("Update product error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Could not update product.",
     });
   }
 };
 
-// 5. Farmer deletes one of their own products
+// Farmer deletes one of their own products.
 export const deleteProduct = async (req, res) => {
   try {
-    const productId = req.params.id;
+    const productId = Number(req.params.id);
     const farmerId = req.user.id;
+
+    if (!Number.isInteger(productId) || productId <= 0) {
+      return res.status(400).json({
+        message: "Invalid product ID.",
+      });
+    }
 
     const [result] = await pool.execute(
       "DELETE FROM products WHERE id = ? AND farmer_id = ?",
@@ -227,13 +262,13 @@ export const deleteProduct = async (req, res) => {
       });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "Product deleted successfully.",
     });
   } catch (error) {
     console.error("Delete product error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Could not delete product.",
     });
   }

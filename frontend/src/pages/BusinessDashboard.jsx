@@ -1,5 +1,5 @@
 import { api } from "../api";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 function BusinessDashboard() {
@@ -9,26 +9,40 @@ function BusinessDashboard() {
     localStorage.getItem("farmlinkCurrentUser") || "null"
   );
 
+  const accountType = currentUser?.accountType;
+
   const [products, setProducts] = useState([]);
-
   const [orders, setOrders] = useState([]);
-
   const [search, setSearch] = useState("");
   const [quantity, setQuantity] = useState({});
 
   useEffect(() => {
-    if (currentUser) {
-      loadProducts();
-      loadOrders();
-    }
-  }, []);
+    if (accountType !== "business") return;
 
-  if (!currentUser || currentUser.accountType !== "business") {
+    async function loadDashboardData() {
+      try {
+        const [productsData, ordersData] = await Promise.all([
+          api("/products"),
+          api("/orders/mine"),
+        ]);
+
+        setProducts(productsData);
+        setOrders(ordersData);
+      } catch (error) {
+        alert(error.message);
+      }
+    }
+
+    loadDashboardData();
+  }, [accountType]);
+
+  if (!currentUser || accountType !== "business") {
     return (
       <div className="auth-page">
         <div className="auth-card">
           <h1>Access denied</h1>
           <p>Please log in as a business buyer to continue.</p>
+
           <Link className="farmer-btn" to="/login">
             Go to Login
           </Link>
@@ -37,23 +51,17 @@ function BusinessDashboard() {
     );
   }
 
-  const filteredProducts = useMemo(() => {
-    return products.filter((product) => {
-      const searchableText =
-        `${product.name} ${product.category} ${product.location}`.toLowerCase();
+  const filteredProducts = products.filter((product) => {
+    const searchableText =
+      `${product.name} ${product.category} ${product.location}`.toLowerCase();
 
-      return (
-        Number(product.quantity) > 0 &&
-        searchableText.includes(search.toLowerCase())
-      );
-    });
-  }, [products, search]);
+    return (
+      Number(product.quantity) > 0 &&
+      searchableText.includes(search.toLowerCase())
+    );
+  });
 
-  const businessOrders = orders.filter(
-    (order) => order.businessEmail === currentUser.email
-  );
-
-  async function loadProducts() {
+ /* async function loadProducts() {
     try {
       const data = await api("/products");
       setProducts(data);
@@ -61,7 +69,7 @@ function BusinessDashboard() {
       alert(error.message);
     }
   }
-  
+
   async function loadOrders() {
     try {
       const data = await api("/orders/mine");
@@ -69,7 +77,7 @@ function BusinessDashboard() {
     } catch (error) {
       alert(error.message);
     }
-  }
+  }*/
 
   function handleLogout() {
     localStorage.removeItem("farmlinkToken");
@@ -77,14 +85,18 @@ function BusinessDashboard() {
     navigate("/");
   }
 
-  async function placeOrder(product) {
+ /*async function placeOrder(product) {
     const orderQuantity = Number(quantity[product.id] || 1);
-  
-    if (orderQuantity < 1 || orderQuantity > Number(product.quantity)) {
-      alert(`Enter a quantity between 1 and ${product.quantity}.`);
+
+    if (
+      !Number.isInteger(orderQuantity) ||
+      orderQuantity < 1 ||
+      orderQuantity > Number(product.quantity)
+    ) {
+      alert(`Enter a whole quantity between 1 and ${product.quantity}.`);
       return;
     }
-  
+
     try {
       await api("/orders", {
         method: "POST",
@@ -93,15 +105,13 @@ function BusinessDashboard() {
           quantity: orderQuantity,
         }),
       });
-  
+
       alert("Order placed successfully!");
-  
-      loadProducts();
-      loadOrders();
+      await Promise.all([loadProducts(), loadOrders()]);
     } catch (error) {
       alert(error.message);
     }
-  }
+  }*/
 
   return (
     <div className="dashboard-page">
@@ -173,6 +183,7 @@ function BusinessDashboard() {
                     className="quantity-input"
                     type="number"
                     min="1"
+                    step="1"
                     max={product.quantity}
                     value={quantity[product.id] || 1}
                     onChange={(event) =>
@@ -183,12 +194,16 @@ function BusinessDashboard() {
                     }
                   />
 
-                  <button
-                    className="register-btn full-width"
-                    onClick={() => placeOrder(product)}
-                  >
-                    Place Order
-                  </button>
+<button
+  className="register-btn full-width"
+  onClick={() =>
+    navigate("/checkout", {
+      state: { product },
+    })
+  }
+>
+  Buy Now
+</button>
                 </article>
               ))}
             </div>
@@ -198,23 +213,28 @@ function BusinessDashboard() {
         <section className="product-section" id="orders">
           <h2>My Orders</h2>
 
-          {businessOrders.length === 0 ? (
+          {orders.length === 0 ? (
             <p className="muted-text">You have not placed any orders yet.</p>
           ) : (
             <div className="order-list">
-              {businessOrders.map((order) => (
+              {orders.map((order) => (
                 <article className="order-card" key={order.id}>
                   <div>
                     <h3>{order.productName}</h3>
                     <p>
                       Farmer: {order.farmerName} · Quantity: {order.quantity}
                     </p>
-                    <p>Order Date: {order.createdAt}</p>
+                    <p>
+                      Order Date:{" "}
+                      {new Date(order.createdAt).toLocaleDateString()}
+                    </p>
                   </div>
 
                   <div className="order-right">
                     <strong>₹{order.total}</strong>
-                    <span className={`status status-${order.status.toLowerCase()}`}>
+                    <span
+                      className={`status status-${order.status.toLowerCase()}`}
+                    >
                       {order.status}
                     </span>
                   </div>

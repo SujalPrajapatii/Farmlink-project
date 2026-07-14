@@ -1,29 +1,63 @@
 import pool from "../config/db.js";
 
-// Business user places an order
+// Business buyer creates an order.
+// The buyer must select:
+// 1. A product
+// 2. Quantity
+// 3. Saved delivery address
+// 4. Payment method: COD or ONLINE
 export const placeOrder = async (req, res) => {
   let connection;
+  let transactionStarted = false;
 
   try {
-    const { productId, quantity } = req.body;
+    const productId = Number(req.body.productId);
+    const requestedQuantity = Number(req.body.quantity);
+    const addressId = Number(req.body.addressId);
+    const paymentMethod = req.body.paymentMethod;
 
-    if (!productId || !quantity || Number(quantity) <= 0) {
+    // Validate product ID.
+    if (!Number.isInteger(productId) || productId <= 0) {
       return res.status(400).json({
-        message: "Valid product and quantity are required.",
+        message: "A valid product is required.",
       });
     }
 
+    // Valid examples: 1, 2, 10
+    // Invalid examples: 0, -1, 1.5, "hello"
+    if (
+      !Number.isInteger(requestedQuantity) ||
+      requestedQuantity <= 0
+    ) {
+      return res.status(400).json({
+        message: "Quantity must be a positive whole number.",
+      });
+    }
+
+    // Buyer must select one of their saved addresses.
+    if (!Number.isInteger(addressId) || addressId <= 0) {
+      return res.status(400).json({
+        message: "Please select a delivery address.",
+      });
+    }
+
+    // COD = Cash on Delivery / offline payment.
+    // ONLINE = Razorpay or another online payment gateway.
+    if (!["COD", "ONLINE"].includes(paymentMethod)) {
+      return res.status(400).json({
+        message: "Payment method must be COD or ONLINE.",
+      });
+    }
+
+    // Comes from JWT token, so buyer cannot create an order for another user.
     const businessId = req.user.id;
 
-    // Get a database connection for transaction
     connection = await pool.getConnection();
-
-    // Start transaction:
-    // create order + reduce product quantity must happen together
     await connection.beginTransaction();
+    transactionStarted = true;
 
-    // FOR UPDATE locks this product temporarily.
-    // This prevents two buyers ordering the same stock at once.
+    // Lock the product row while ordering.
+    // This prevents two buyers from purchasing the same stock at once.
     const [products] = await connection.execute(
       `SELECT id, farmer_id, quantity, price
        FROM products
@@ -36,58 +70,151 @@ export const placeOrder = async (req, res) => {
 
     if (!product) {
       await connection.rollback();
+      transactionStarted = false;
 
       return res.status(404).json({
         message: "Product not found.",
       });
     }
 
-    if (Number(product.quantity) < Number(quantity)) {
+    // Ensure enough stock exists.
+    if (Number(product.quantity) < requestedQuantity) {
       await connection.rollback();
+      transactionStarted = false;
 
       return res.status(400).json({
         message: "Requested quantity is not available.",
       });
     }
 
-    const total = Number(product.price) * Number(quantity);
+    // Get the delivery address only if it belongs to this business buyer.
+    const [addresses] = await connection.execute(
+      `SELECT
+        id,
+        recipient_name,
+        phone,
+        address_line1,
+        address_line2,
+        city,
+        state,
+        pincode
+       FROM delivery_addresses
+       WHERE id = ? AND business_id = ?`,
+      [addressId, businessId]
+    );
 
-    // Save order in orders table
+    const address = addresses[0];
+
+    if (!address) {
+      await connection.rollback();
+      transactionStarted = false;
+
+      return res.status(404).json({
+        message: "Delivery address not found.",
+      });
+    }
+
+    // Create one readable address string to save permanently on the order.
+    const fullAddress = [
+      address.address_line1,
+      address.address_line2,
+      address.city,
+      address.state,
+      address.pincode,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+    // The server calculates price. The frontend must never send total price.
+    const total = Number(product.price) * requestedQuantity;
+
+    // COD orders can go directly to farmer approval.
+    // ONLINE orders wait until payment is verified.
+    const initialStatus =
+      paymentMethod === "ONLINE" ? "Awaiting Payment" : "Pending";
+
+    const initialPaymentStatus =
+      paymentMethod === "ONLINE" ? "PENDING" : "PENDING";
+
+    // Create the order and store a snapshot of the delivery details.
     const [result] = await connection.execute(
       `INSERT INTO orders
-      (product_id, business_id, farmer_id, quantity, unit_price, total, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      (
+        product_id,
+        business_id,
+        farmer_id,
+        quantity,
+        unit_price,
+        total,
+        status,
+        delivery_address_id,
+        delivery_name,
+        delivery_phone,
+        delivery_address,
+        payment_method,
+        payment_status
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         productId,
         businessId,
         product.farmer_id,
-        quantity,
+        requestedQuantity,
         product.price,
         total,
-        "Pending",
+        initialStatus,
+        address.id,
+        address.recipient_name,
+        address.phone,
+        fullAddress,
+        paymentMethod,
+        initialPaymentStatus,
       ]
     );
 
-    // Decrease stock after buyer places order
+    const orderId = result.insertId;
+
+    // Add the first tracking event.
+    await connection.execute(
+      `INSERT INTO order_tracking_events (order_id, status, note)
+       VALUES (?, ?, ?)`,
+      [
+        orderId,
+        initialStatus,
+        paymentMethod === "ONLINE"
+          ? "Waiting for online payment."
+          : "Cash on delivery order created.",
+      ]
+    );
+
+    // Reserve stock immediately.
+    // If an order is cancelled, the stock is returned in updateOrderStatus.
     await connection.execute(
       "UPDATE products SET quantity = quantity - ? WHERE id = ?",
-      [quantity, productId]
+      [requestedQuantity, productId]
     );
 
     await connection.commit();
+    transactionStarted = false;
 
-    res.status(201).json({
-      message: "Order placed successfully.",
-      orderId: result.insertId,
+    return res.status(201).json({
+      message:
+        paymentMethod === "ONLINE"
+          ? "Order created. Complete online payment."
+          : "Cash on delivery order created successfully.",
+      orderId,
+      status: initialStatus,
+      paymentMethod,
+      total,
     });
   } catch (error) {
-    console.log("Place order error:", error);
+    console.error("Place order error:", error);
 
-    if (connection) {
+    if (connection && transactionStarted) {
       await connection.rollback();
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Could not place order.",
     });
   } finally {
@@ -97,15 +224,15 @@ export const placeOrder = async (req, res) => {
   }
 };
 
-// Farmer sees orders received.
-// Business sees orders they placed.
+// Farmer sees received orders.
+// Business user sees orders they placed.
 export const getMyOrders = async (req, res) => {
   try {
     const userId = req.user.id;
     const accountType = req.user.accountType;
 
-    let query = "";
-    let values = [];
+    let query;
+    let values;
 
     if (accountType === "farmer") {
       query = `
@@ -115,16 +242,18 @@ export const getMyOrders = async (req, res) => {
           o.unit_price AS unitPrice,
           o.total,
           o.status,
+          o.payment_method AS paymentMethod,
+          o.payment_status AS paymentStatus,
+          o.tracking_code AS trackingCode,
+          o.delivery_name AS deliveryName,
+          o.delivery_phone AS deliveryPhone,
+          o.delivery_address AS deliveryAddress,
           o.created_at AS createdAt,
           p.name AS productName,
-          b.name AS businessName,
-          b.email AS businessEmail,
-          f.name AS farmerName,
-          f.email AS farmerEmail
+          b.name AS businessName
         FROM orders o
         JOIN products p ON o.product_id = p.id
         JOIN users b ON o.business_id = b.id
-        JOIN users f ON o.farmer_id = f.id
         WHERE o.farmer_id = ?
         ORDER BY o.created_at DESC
       `;
@@ -138,15 +267,14 @@ export const getMyOrders = async (req, res) => {
           o.unit_price AS unitPrice,
           o.total,
           o.status,
+          o.payment_method AS paymentMethod,
+          o.payment_status AS paymentStatus,
+          o.tracking_code AS trackingCode,
           o.created_at AS createdAt,
           p.name AS productName,
-          b.name AS businessName,
-          b.email AS businessEmail,
-          f.name AS farmerName,
-          f.email AS farmerEmail
+          f.name AS farmerName
         FROM orders o
         JOIN products p ON o.product_id = p.id
-        JOIN users b ON o.business_id = b.id
         JOIN users f ON o.farmer_id = f.id
         WHERE o.business_id = ?
         ORDER BY o.created_at DESC
@@ -161,27 +289,115 @@ export const getMyOrders = async (req, res) => {
 
     const [orders] = await pool.execute(query, values);
 
-    res.json(orders);
+    return res.json(orders);
   } catch (error) {
-    console.log("Get orders error:", error);
+    console.error("Get orders error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Could not get orders.",
     });
   }
 };
 
-// Farmer accepts, cancels, or marks an order as delivered
+// Returns tracking timeline to the farmer or buyer who owns the order.
+export const getOrderTracking = async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const userId = req.user.id;
+    const accountType = req.user.accountType;
+
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      return res.status(400).json({
+        message: "Invalid order ID.",
+      });
+    }
+
+    let ownershipColumn;
+
+    if (accountType === "farmer") {
+      ownershipColumn = "farmer_id";
+    } else if (accountType === "business") {
+      ownershipColumn = "business_id";
+    } else {
+      return res.status(403).json({
+        message: "You cannot view this order.",
+      });
+    }
+
+    // ownershipColumn is selected only from the two fixed strings above.
+    const [orders] = await pool.execute(
+      `SELECT
+        id,
+        status,
+        payment_method AS paymentMethod,
+        payment_status AS paymentStatus,
+        tracking_code AS trackingCode,
+        delivery_name AS deliveryName,
+        delivery_phone AS deliveryPhone,
+        delivery_address AS deliveryAddress
+      FROM orders
+      WHERE id = ? AND ${ownershipColumn} = ?`,
+      [orderId, userId]
+    );
+
+    const order = orders[0];
+
+    if (!order) {
+      return res.status(404).json({
+        message: "Order not found.",
+      });
+    }
+
+    const [events] = await pool.execute(
+      `SELECT
+        id,
+        status,
+        note,
+        created_at AS createdAt
+      FROM order_tracking_events
+      WHERE order_id = ?
+      ORDER BY created_at ASC, id ASC`,
+      [orderId]
+    );
+
+    return res.json({
+      order,
+      events,
+    });
+  } catch (error) {
+    console.error("Get order tracking error:", error);
+
+    return res.status(500).json({
+      message: "Could not get order tracking.",
+    });
+  }
+};
+
+// Farmer changes delivery/order status.
 export const updateOrderStatus = async (req, res) => {
   let connection;
+  let transactionStarted = false;
 
   try {
-    const orderId = req.params.id;
-    const { status } = req.body;
+    const orderId = Number(req.params.id);
+    const { status, note, trackingCode } = req.body;
     const farmerId = req.user.id;
 
-    // Only these status changes are allowed
-    if (!["Accepted", "Cancelled", "Delivered"].includes(status)) {
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      return res.status(400).json({
+        message: "Invalid order ID.",
+      });
+    }
+
+    // Allowed status values sent by frontend/Postman.
+    const validStatuses = [
+      "Accepted",
+      "Out for Delivery",
+      "Delivered",
+      "Cancelled",
+    ];
+
+    if (!validStatuses.includes(status)) {
       return res.status(400).json({
         message: "Invalid order status.",
       });
@@ -189,10 +405,17 @@ export const updateOrderStatus = async (req, res) => {
 
     connection = await pool.getConnection();
     await connection.beginTransaction();
+    transactionStarted = true;
 
-    // Get order only if it belongs to the logged-in farmer
+    // Get order only if it belongs to currently logged-in farmer.
     const [orders] = await connection.execute(
-      `SELECT id, product_id, quantity, status
+      `SELECT
+        id,
+        product_id,
+        quantity,
+        status,
+        payment_method,
+        payment_status
        FROM orders
        WHERE id = ? AND farmer_id = ?
        FOR UPDATE`,
@@ -203,27 +426,30 @@ export const updateOrderStatus = async (req, res) => {
 
     if (!order) {
       await connection.rollback();
+      transactionStarted = false;
 
       return res.status(404).json({
         message: "Order not found.",
       });
     }
 
-    // These are the only allowed status paths
+    // Defines the only valid order flow.
     const allowedChanges = {
       Pending: ["Accepted", "Cancelled"],
-      Accepted: ["Delivered"],
+      Accepted: ["Out for Delivery", "Cancelled"],
+      "Out for Delivery": ["Delivered"],
     };
 
     if (!allowedChanges[order.status]?.includes(status)) {
       await connection.rollback();
+      transactionStarted = false;
 
       return res.status(400).json({
         message: `Cannot change ${order.status} order to ${status}.`,
       });
     }
 
-    // If farmer cancels, return reserved stock to product
+    // Cancellation returns reserved stock to the product.
     if (status === "Cancelled") {
       await connection.execute(
         "UPDATE products SET quantity = quantity + ? WHERE id = ?",
@@ -231,25 +457,58 @@ export const updateOrderStatus = async (req, res) => {
       );
     }
 
-    // Update order status
+    // Cash on delivery becomes paid when the farmer marks the order delivered.
+    const nextPaymentStatus =
+      status === "Delivered" && order.payment_method === "COD"
+        ? "PAID"
+        : order.payment_status;
+
+    // Tracking code is optional.
+    // It can be a courier tracking number, delivery vehicle ID, etc.
+    const cleanTrackingCode =
+      typeof trackingCode === "string" && trackingCode.trim()
+        ? trackingCode.trim()
+        : null;
+
     await connection.execute(
-      "UPDATE orders SET status = ? WHERE id = ?",
-      [status, orderId]
+      `UPDATE orders
+       SET
+         status = ?,
+         payment_status = ?,
+         tracking_code = COALESCE(?, tracking_code)
+       WHERE id = ?`,
+      [status, nextPaymentStatus, cleanTrackingCode, orderId]
+    );
+
+    // This is the code you asked about.
+    // It saves every change as a tracking event for the buyer.
+    const cleanNote =
+      typeof note === "string" && note.trim()
+        ? note.trim()
+        : status === "Out for Delivery"
+          ? "Your order is on the way."
+          : `Order status changed to ${status}.`;
+
+    await connection.execute(
+      `INSERT INTO order_tracking_events (order_id, status, note)
+       VALUES (?, ?, ?)`,
+      [orderId, status, cleanNote]
     );
 
     await connection.commit();
+    transactionStarted = false;
 
-    res.json({
+    return res.json({
       message: `Order ${status.toLowerCase()} successfully.`,
     });
   } catch (error) {
-    console.log("Update order status error:", error);
+    console.error("Update order status error:", error);
 
-    if (connection) {
+    if (connection && transactionStarted) {
       await connection.rollback();
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Could not update order status.",
     });
   } finally {
