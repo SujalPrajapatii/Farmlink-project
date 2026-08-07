@@ -17,7 +17,9 @@ function Checkout() {
 
   const [addresses, setAddresses] = useState([]);
   const [selectedAddressId, setSelectedAddressId] = useState("");
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState(
+  location.state?.quantity || 1
+);
   const [paymentMethod, setPaymentMethod] = useState("COD");
 
   const [showAddressForm, setShowAddressForm] = useState(false);
@@ -174,6 +176,21 @@ function Checkout() {
         theme: {
           color: "#2f7d32",
         },
+
+        config: {
+  display: {
+    blocks: {
+      upi: {
+        name: "Pay using UPI",
+        instruments: [{ method: "upi" }],
+      },
+    },
+    sequence: ["block.upi"],
+    preferences: {
+      show_default_blocks: false,
+    },
+  },
+},
 
         handler: (response) => {
           resolve(response);
@@ -468,7 +485,7 @@ function Checkout() {
               checked={paymentMethod === "ONLINE"}
               onChange={(event) => setPaymentMethod(event.target.value)}
             />{" "}
-            Pay Online with Razorpay
+            Pay Online by UPI, card, or net banking (Razorpay)
           </label>
 
           <button

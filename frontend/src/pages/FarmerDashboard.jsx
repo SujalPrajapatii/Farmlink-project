@@ -119,6 +119,42 @@ function FarmerDashboard() {
     }
   }
 
+  async function shareCurrentLocation(orderId) {
+  if (!navigator.geolocation) {
+    alert("Your browser does not support location sharing.");
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    async (position) => {
+      try {
+        await api(`/orders/${orderId}/location`, {
+          method: "POST",
+          body: JSON.stringify({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            note: "Farmer is currently delivering your order.",
+          }),
+        });
+
+        alert("Your delivery location was shared with the buyer.");
+      } catch (error) {
+        alert(error.message);
+      }
+    },
+    () => {
+      alert(
+        "Location permission was denied. Please allow location access and try again."
+      );
+    },
+    {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 0,
+    }
+  );
+}
+
   return (
     <div className="dashboard-page">
       <aside className="sidebar">
@@ -188,7 +224,7 @@ function FarmerDashboard() {
           ) : (
             <div className="product-grid">
               {products.map((product) => (
-                <article className="product-card" key={product.id}>
+                <article className="product-card farmer-product-card" key={product.id}>
                   <img
                     src={
                       product.image ||
@@ -251,10 +287,17 @@ function FarmerDashboard() {
                   <div className="order-right">
                     <strong>₹{order.total}</strong>
                     <span
-                      className={`status status-${order.status.toLowerCase()}`}
+                      className={`status status-${order.status.toLowerCase().replaceAll(" ", "-")}`}
                     >
                       {order.status}
                     </span>
+
+                    <Link
+                      className="login-btn"
+                      to={`/orders/${order.id}/tracking`}
+                    >
+                      View Tracking
+                    </Link>
 
                     {order.status === "Pending" && (
                       <div className="order-actions">
@@ -278,16 +321,36 @@ function FarmerDashboard() {
                       </div>
                     )}
 
-                    {order.status === "Accepted" && (
-                      <button
-                        className="deliver-btn"
-                        onClick={() =>
-                          updateOrderStatus(order.id, "Delivered")
-                        }
-                      >
-                        Mark Delivered
-                      </button>
-                    )}
+                   {order.status === "Accepted" && (
+  <button
+    className="accept-btn"
+    onClick={() =>
+      updateOrderStatus(order.id, "Out for Delivery")
+    }
+  >
+    Start Delivery
+  </button>
+)}
+
+{order.status === "Out for Delivery" && (
+  <div className="order-actions">
+    <button
+      className="accept-btn"
+      onClick={() => shareCurrentLocation(order.id)}
+    >
+      Share Current Location
+    </button>
+
+    <button
+      className="deliver-btn"
+      onClick={() =>
+        updateOrderStatus(order.id, "Delivered")
+      }
+    >
+      Mark Delivered
+    </button>
+  </div>
+)}
                   </div>
                 </article>
               ))}

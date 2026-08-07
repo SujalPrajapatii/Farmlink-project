@@ -198,7 +198,10 @@ function BusinessDashboard() {
   className="register-btn full-width"
   onClick={() =>
     navigate("/checkout", {
-      state: { product },
+      state: {
+        product,
+        quantity: Number(quantity[product.id] || 1),
+      },
     })
   }
 >
@@ -233,10 +236,16 @@ function BusinessDashboard() {
                   <div className="order-right">
                     <strong>₹{order.total}</strong>
                     <span
-                      className={`status status-${order.status.toLowerCase()}`}
+                      className={`status status-${order.status.toLowerCase().replaceAll(" ", "-")}`}
                     >
                       {order.status}
                     </span>
+                    <Link
+  className="login-btn"
+  to={`/orders/${order.id}/tracking`}
+>
+  Track Order
+</Link>
                   </div>
                 </article>
               ))}

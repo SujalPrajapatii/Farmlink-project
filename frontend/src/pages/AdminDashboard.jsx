@@ -1,134 +1,57 @@
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { api } from "../api";
+
+const money = (value) => `₹${Number(value || 0).toLocaleString("en-IN")}`;
+const date = (value) => value ? new Date(value).toLocaleDateString("en-IN") : "-";
 
 function AdminDashboard() {
   const navigate = useNavigate();
+  const currentUser = JSON.parse(localStorage.getItem("farmlinkCurrentUser") || "null");
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const currentUser = JSON.parse(
-    localStorage.getItem("farmlinkCurrentUser") || "null"
-  );
+  async function loadDashboard() {
+    try {
+      setLoading(true);
+      setError("");
+      setData(await api("/admin/dashboard"));
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
+  }
 
-  const users = JSON.parse(localStorage.getItem("farmlinkUsers") || "[]");
-  const products = JSON.parse(
-    localStorage.getItem("farmlinkProducts") || "[]"
-  );
-  const orders = JSON.parse(localStorage.getItem("farmlinkOrders") || "[]");
-
-  const farmers = users.filter((user) => user.accountType === "farmer");
-  const businesses = users.filter((user) => user.accountType === "business");
+  useEffect(() => { if (currentUser?.accountType === "admin") loadDashboard(); }, []);
 
   function handleLogout() {
+    localStorage.removeItem("farmlinkToken");
     localStorage.removeItem("farmlinkCurrentUser");
     navigate("/");
   }
 
   if (!currentUser || currentUser.accountType !== "admin") {
-    return (
-      <div className="auth-page">
-        <div className="auth-card">
-          <h1>Admin access only</h1>
-          <p>This dashboard is reserved for FarmLink administrators.</p>
-          <Link className="farmer-btn" to="/">
-            Return Home
-          </Link>
-        </div>
-      </div>
-    );
+    return <div className="auth-page"><div className="auth-card"><h1>Admin access only</h1><p>This dashboard is reserved for FarmLink administrators.</p><Link className="farmer-btn" to="/login">Go to Login</Link></div></div>;
   }
 
-  return (
-    <div className="dashboard-page">
-      <aside className="sidebar">
-        <h2>🌱 FarmLink</h2>
-        <Link to="/admin-dashboard">Dashboard</Link>
-        <a href="#users">Users</a>
-        <a href="#products">Products</a>
-        <a href="#orders">Orders</a>
-        <button className="sidebar-logout" onClick={handleLogout}>
-          Logout
-        </button>
-      </aside>
-
-      <main className="dashboard-content">
-        <div className="dashboard-header">
-          <div>
-            <p className="section-tag">ADMIN DASHBOARD</p>
-            <h1>Platform Overview</h1>
-            <p>Monitor FarmLink users, crop listings, and orders.</p>
-          </div>
-        </div>
-
-        <section className="dashboard-stats">
-          <div className="dashboard-stat-card">
-            <p>Total Farmers</p>
-            <h2>{farmers.length}</h2>
-          </div>
-          <div className="dashboard-stat-card">
-            <p>Total Businesses</p>
-            <h2>{businesses.length}</h2>
-          </div>
-          <div className="dashboard-stat-card">
-            <p>Total Products</p>
-            <h2>{products.length}</h2>
-          </div>
-          <div className="dashboard-stat-card">
-            <p>Total Orders</p>
-            <h2>{orders.length}</h2>
-          </div>
-        </section>
-
-        <section className="product-section" id="users">
-          <h2>Registered Users</h2>
-
-          {users.length === 0 ? (
-            <p className="muted-text">No registered users yet.</p>
-          ) : (
-            <div className="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Account Type</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((user) => (
-                    <tr key={user.id}>
-                      <td>{user.name}</td>
-                      <td>{user.email}</td>
-                      <td>{user.accountType}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        <section className="product-section" id="orders">
-          <h2>All Orders</h2>
-
-          {orders.length === 0 ? (
-            <p className="muted-text">No orders have been placed yet.</p>
-          ) : (
-            <div className="order-list">
-              {orders.map((order) => (
-                <div className="order-card" key={order.id}>
-                  <div>
-                    <h3>{order.productName}</h3>
-                    <p>
-                      {order.businessName} ordered {order.quantity} unit(s)
-                    </p>
-                  </div>
-                  <strong>₹{order.total}</strong>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </main>
-    </div>
-  );
+  return <div className="dashboard-page admin-page">
+    <aside className="sidebar"><h2>FarmLink</h2><Link to="/admin-dashboard">Overview</Link><a href="#farmers">Farmers</a><a href="#buyers">Buyers</a><a href="#products">Products</a><a href="#orders">Orders</a><button className="sidebar-logout" onClick={handleLogout}>Logout</button></aside>
+    <main className="dashboard-content">
+      <div className="admin-hero"><div><p className="section-tag">ADMIN DASHBOARD</p><h1>Platform overview</h1><p>Monitor farmers, buyers, products, orders, and sales from one place.</p></div><button className="admin-refresh" onClick={loadDashboard} disabled={loading}>{loading ? "Loading..." : "Refresh data"}</button></div>
+      {error && <div className="admin-error">{error}</div>}
+      {loading && !data ? <div className="admin-loading">Loading dashboard data...</div> : data && <>
+        <section className="admin-stat-grid"><Stat label="Farmers" value={data.summary.farmers} /><Stat label="Buyers" value={data.summary.businesses} /><Stat label="Products" value={data.summary.products} /><Stat label="Orders" value={data.summary.orders} /><Stat label="Delivered sales" value={money(data.summary.deliveredSales)} /></section>
+        <DataTable id="farmers" title="Registered farmers" columns={["Name", "Email", "Products", "Orders", "Joined"]} rows={data.farmers.map((farmer) => [farmer.name, farmer.email, farmer.productCount, farmer.orderCount, date(farmer.createdAt)])} />
+        <DataTable id="buyers" title="Registered buyers" columns={["Name", "Email", "Orders", "Order value", "Joined"]} rows={data.businesses.map((buyer) => [buyer.name, buyer.email, buyer.orderCount, money(buyer.orderValue), date(buyer.createdAt)])} />
+        <DataTable id="products" title="All product listings" columns={["Product", "Category", "Farmer", "Stock", "Price", "Location"]} rows={data.products.map((product) => [product.name, product.category, product.farmerName, `${product.quantity} ${product.unit}`, money(product.price), product.location])} />
+        <DataTable id="orders" title="All orders" columns={["Order", "Product", "Buyer", "Farmer", "Total", "Status", "Payment", "Date"]} rows={data.orders.map((order) => [`#${order.id}`, order.productName, order.businessName, order.farmerName, money(order.total), <span className={`status status-${order.status.toLowerCase().replaceAll(" ", "-")}`}>{order.status}</span>, `${order.paymentMethod} / ${order.paymentStatus}`, date(order.createdAt)])} />
+      </>}
+    </main>
+  </div>;
 }
 
+function Stat({ label, value }) { return <article className="admin-stat-card"><p>{label}</p><h2>{value}</h2></article>; }
+function DataTable({ id, title, columns, rows }) { return <section className="admin-data-section" id={id}><h2>{title}</h2>{rows.length === 0 ? <p className="muted-text">No records yet.</p> : <div className="table-wrapper"><table><thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={index}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}</tr>)}</tbody></table></div>}</section>; }
 export default AdminDashboard;

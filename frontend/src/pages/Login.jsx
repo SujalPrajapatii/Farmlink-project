@@ -1,9 +1,10 @@
 import { api } from "../api";
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [formData, setFormData] = useState({
     email: "",
@@ -36,7 +37,11 @@ function Login() {
     
       alert("Login successful!");
     
-      if (result.user.accountType === "farmer") {
+      const returnTo = location.state?.from?.pathname;
+
+      if (returnTo) {
+        navigate(returnTo, { replace: true });
+      } else if (result.user.accountType === "farmer") {
         navigate("/farmer-dashboard");
       } else if (result.user.accountType === "business") {
         navigate("/business-dashboard");

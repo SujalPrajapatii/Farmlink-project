@@ -7,17 +7,15 @@ import {
   getMyOrders,
   getOrderTracking,
   updateOrderStatus,
+  addDeliveryLocation,
 } from "../controllers/orderController.js";
 
 const router = express.Router();
 
-// Buyer or farmer can view only their own orders.
 router.get("/mine", authMiddleware, getMyOrders);
 
-// Buyer or farmer can view the tracking history of their own order.
 router.get("/:id/tracking", authMiddleware, getOrderTracking);
 
-// Only business buyers can place an order.
 router.post(
   "/",
   authMiddleware,
@@ -25,12 +23,18 @@ router.post(
   placeOrder
 );
 
-// Only farmers can accept, dispatch, deliver, or cancel their own orders.
 router.patch(
   "/:id/status",
   authMiddleware,
   allowRoles("farmer"),
   updateOrderStatus
+);
+
+router.post(
+  "/:id/location",
+  authMiddleware,
+  allowRoles("farmer"),
+  addDeliveryLocation
 );
 
 export default router;

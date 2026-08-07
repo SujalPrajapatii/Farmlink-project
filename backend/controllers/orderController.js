@@ -173,6 +173,13 @@ export const placeOrder = async (req, res) => {
     );
 
     const orderId = result.insertId;
+    const trackingCode = `FL-${String(orderId).padStart(8, "0")}`;
+
+    // Every order receives a stable, customer-friendly tracking reference.
+    await connection.execute(
+      "UPDATE orders SET tracking_code = ? WHERE id = ?",
+      [trackingCode, orderId]
+    );
 
     // Add the first tracking event.
     await connection.execute(
@@ -203,6 +210,7 @@ export const placeOrder = async (req, res) => {
           ? "Order created. Complete online payment."
           : "Cash on delivery order created successfully.",
       orderId,
+      trackingCode,
       status: initialStatus,
       paymentMethod,
       total,
@@ -360,10 +368,27 @@ export const getOrderTracking = async (req, res) => {
       [orderId]
     );
 
+    const [locations] = await pool.execute(
+  `SELECT
+    id,
+    latitude,
+    longitude,
+    note,
+    created_at AS createdAt
+   FROM order_delivery_locations
+   WHERE order_id = ?
+   ORDER BY created_at DESC`,
+  [orderId]
+);
+
+const latestLocation = locations[0] || null;
+
     return res.json({
-      order,
-      events,
-    });
+  order,
+  events,
+  latestLocation,
+  locations,
+});
   } catch (error) {
     console.error("Get order tracking error:", error);
 
@@ -515,5 +540,75 @@ export const updateOrderStatus = async (req, res) => {
     if (connection) {
       connection.release();
     }
+  }
+};
+
+export const addDeliveryLocation = async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const farmerId = req.user.id;
+    const latitude = Number(req.body.latitude);
+    const longitude = Number(req.body.longitude);
+    const note =
+      typeof req.body.note === "string" && req.body.note.trim()
+        ? req.body.note.trim().slice(0, 255)
+        : "Farmer shared the current delivery location.";
+
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      return res.status(400).json({
+        message: "Invalid order ID.",
+      });
+    }
+
+    if (
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
+      return res.status(400).json({
+        message: "A valid delivery location is required.",
+      });
+    }
+
+    const [orders] = await pool.execute(
+      `SELECT id, status
+       FROM orders
+       WHERE id = ? AND farmer_id = ?`,
+      [orderId, farmerId]
+    );
+
+    const order = orders[0];
+
+    if (!order) {
+      return res.status(404).json({
+        message: "Order not found.",
+      });
+    }
+
+    if (order.status !== "Out for Delivery") {
+      return res.status(400).json({
+        message: "Location can be updated only when the order is out for delivery.",
+      });
+    }
+
+    await pool.execute(
+      `INSERT INTO order_delivery_locations
+        (order_id, latitude, longitude, note)
+       VALUES (?, ?, ?, ?)`,
+      [orderId, latitude, longitude, note]
+    );
+
+    return res.status(201).json({
+      message: "Delivery location updated successfully.",
+    });
+  } catch (error) {
+    console.error("Add delivery location error:", error);
+
+    return res.status(500).json({
+      message: "Could not update delivery location.",
+    });
   }
 };

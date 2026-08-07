@@ -10,6 +10,12 @@ const razorpay = new Razorpay({
 // Buyer requests a Razorpay payment order for their FarmLink order.
 export const createOnlinePayment = async (req, res) => {
   try {
+    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+      return res.status(503).json({
+        message: "Online payments are not configured. Add Razorpay test keys to backend/.env.",
+      });
+    }
+
     const orderId = Number(req.params.id);
     const businessId = req.user.id;
 
