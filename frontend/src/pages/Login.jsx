@@ -54,43 +54,30 @@ function Login() {
   }
 
   return (
-    <div className="auth-page">
-      <form className="auth-card" onSubmit={handleSubmit}>
-        <Link className="back-link" to="/">
-          ← Back to FarmLink
-        </Link>
-
-        <h1>Welcome Back</h1>
-        <p>Login to manage your FarmLink account.</p>
-
-        <label>Email Address</label>
-        <input
-          type="email"
-          name="email"
-          value={formData.email}
-          onChange={handleChange}
-          placeholder="Enter your email"
-          required
-        />
-
-        <label>Password</label>
-        <input
-          type="password"
-          name="password"
-          value={formData.password}
-          onChange={handleChange}
-          placeholder="Enter your password"
-          required
-        />
-
-        <button className="farmer-btn" type="submit">
-          Login
-        </button>
-
-        <p className="auth-footer">
-          New to FarmLink? <Link to="/register">Create an account</Link>
-        </p>
-      </form>
+    <div className="auth-page auth-showcase-page">
+      <div className="auth-showcase">
+        <section className="auth-brand-panel">
+          <div className="auth-brand-content">
+            <Link className="auth-brand-logo" to="/">Farm<span>Link</span></Link>
+            <div className="auth-brand-copy">
+              <span className="auth-leaf">✦</span>
+              <h2>Trade fresh.<br />Grow together.</h2>
+              <p>Direct connections for farmers and businesses who value quality produce.</p>
+            </div>
+            <span className="auth-brand-caption">FRESH PRODUCE · FAIR TRADE</span>
+          </div>
+        </section>
+        <form className="auth-card auth-showcase-form" onSubmit={handleSubmit}>
+          <Link className="back-link" to="/">← Back to FarmLink</Link>
+          <div className="auth-form-heading"><span>WELCOME BACK</span><h1>Log in to FarmLink</h1><p>Enter your details to manage your marketplace account.</p></div>
+          <label>Email Address</label>
+          <input type="email" name="email" value={formData.email} onChange={handleChange} placeholder="name@example.com" required />
+          <label>Password</label>
+          <input type="password" name="password" value={formData.password} onChange={handleChange} placeholder="Enter your password" required />
+          <button className="farmer-btn" type="submit">Log in <span>→</span></button>
+          <p className="auth-footer">New to FarmLink? <Link to="/register">Create an account</Link></p>
+        </form>
+      </div>
     </div>
   );
 }

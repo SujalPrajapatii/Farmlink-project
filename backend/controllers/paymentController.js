@@ -226,14 +226,14 @@ export const verifyOnlinePayment = async (req, res) => {
       });
     }
 
-    // Payment is genuine.
-    // Farmer can now see it as a Pending order and decide whether to accept it.
+    // Payment is genuine. Stock was reserved when the order was created,
+    // so the paid order is accepted automatically and ready for delivery.
     await connection.execute(
       `UPDATE orders
        SET
          payment_status = 'PAID',
          gateway_payment_id = ?,
-         status = 'Pending'
+         status = 'Accepted'
        WHERE id = ?`,
       [razorpay_payment_id, order.id]
     );
@@ -243,8 +243,8 @@ export const verifyOnlinePayment = async (req, res) => {
        VALUES (?, ?, ?)`,
       [
         order.id,
-        "Pending",
-        "Online payment verified. Waiting for farmer acceptance.",
+        "Accepted",
+        "Online payment verified. Order accepted automatically and ready for delivery.",
       ]
     );
 
@@ -319,7 +319,7 @@ export const paymentWebhook = async (req, res) => {
            SET
              payment_status = 'PAID',
              gateway_payment_id = ?,
-             status = 'Pending'
+             status = 'Accepted'
            WHERE gateway_order_id = ?
              AND payment_method = 'ONLINE'
              AND payment_status <> 'PAID'`,
@@ -341,8 +341,8 @@ export const paymentWebhook = async (req, res) => {
                VALUES (?, ?, ?)`,
               [
                 order.id,
-                "Pending",
-                "Online payment confirmed by payment gateway.",
+                "Accepted",
+                "Online payment confirmed. Order accepted automatically and ready for delivery.",
               ]
             );
           }

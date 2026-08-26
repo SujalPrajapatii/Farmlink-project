@@ -128,10 +128,11 @@ export const placeOrder = async (req, res) => {
     // The server calculates price. The frontend must never send total price.
     const total = Number(product.price) * requestedQuantity;
 
-    // COD orders can go directly to farmer approval.
-    // ONLINE orders wait until payment is verified.
+    // Stock is reserved in this transaction, so COD orders are immediately
+    // accepted. The farmer only needs to arrange delivery.
+    // ONLINE orders wait until the payment gateway confirms the payment.
     const initialStatus =
-      paymentMethod === "ONLINE" ? "Awaiting Payment" : "Pending";
+      paymentMethod === "ONLINE" ? "Awaiting Payment" : "Accepted";
 
     const initialPaymentStatus =
       paymentMethod === "ONLINE" ? "PENDING" : "PENDING";
@@ -190,7 +191,7 @@ export const placeOrder = async (req, res) => {
         initialStatus,
         paymentMethod === "ONLINE"
           ? "Waiting for online payment."
-          : "Cash on delivery order created.",
+          : "Order accepted automatically because stock is available.",
       ]
     );
 
@@ -208,7 +209,7 @@ export const placeOrder = async (req, res) => {
       message:
         paymentMethod === "ONLINE"
           ? "Order created. Complete online payment."
-          : "Cash on delivery order created successfully.",
+          : "Order accepted automatically. The farmer will arrange delivery.",
       orderId,
       trackingCode,
       status: initialStatus,
@@ -258,11 +259,12 @@ export const getMyOrders = async (req, res) => {
           o.delivery_address AS deliveryAddress,
           o.created_at AS createdAt,
           p.name AS productName,
+          p.category AS productCategory,
           b.name AS businessName
         FROM orders o
         JOIN products p ON o.product_id = p.id
         JOIN users b ON o.business_id = b.id
-        WHERE o.farmer_id = ?
+        WHERE o.farmer_id = ? AND o.status NOT IN ('Cancelled', 'CANCELLED_BY_BUYER')
         ORDER BY o.created_at DESC
       `;
 
@@ -280,11 +282,12 @@ export const getMyOrders = async (req, res) => {
           o.tracking_code AS trackingCode,
           o.created_at AS createdAt,
           p.name AS productName,
+          p.category AS productCategory,
           f.name AS farmerName
         FROM orders o
         JOIN products p ON o.product_id = p.id
         JOIN users f ON o.farmer_id = f.id
-        WHERE o.business_id = ?
+        WHERE o.business_id = ? AND o.status NOT IN ('Cancelled', 'CANCELLED_BY_BUYER')
         ORDER BY o.created_at DESC
       `;
 
@@ -304,6 +307,94 @@ export const getMyOrders = async (req, res) => {
     return res.status(500).json({
       message: "Could not get orders.",
     });
+  }
+};
+
+// Creates all cart items atomically. The existing schema stores one product per
+// order, so a cart checkout produces linked individual order records while the
+// buyer completes one checkout, address selection and payment choice.
+export const placeCartOrder = async (req, res) => {
+  let connection;
+  try {
+    const { items, addressId: rawAddressId, paymentMethod } = req.body;
+    const addressId = Number(rawAddressId);
+    if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ message: "Your cart is empty." });
+    if (!Number.isInteger(addressId) || addressId <= 0) return res.status(400).json({ message: "Please select a delivery address." });
+    if (!['COD', 'ONLINE'].includes(paymentMethod)) return res.status(400).json({ message: "Payment method must be COD or ONLINE." });
+
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const [addresses] = await connection.execute(
+      `SELECT id, recipient_name, phone, address_line1, address_line2, city, state, pincode
+       FROM delivery_addresses WHERE id = ? AND business_id = ?`, [addressId, req.user.id]
+    );
+    const address = addresses[0];
+    if (!address) throw Object.assign(new Error("Delivery address not found."), { status: 404 });
+    const fullAddress = [address.address_line1, address.address_line2, address.city, address.state, address.pincode].filter(Boolean).join(", ");
+    const createdOrders = [];
+
+    for (const item of items) {
+      const productId = Number(item.productId), quantity = Number(item.quantity);
+      if (!Number.isInteger(productId) || !Number.isInteger(quantity) || quantity < 1) throw Object.assign(new Error("Every cart item needs a valid quantity."), { status: 400 });
+      const [products] = await connection.execute(`SELECT id, farmer_id, quantity, price FROM products WHERE id = ? FOR UPDATE`, [productId]);
+      const product = products[0];
+      if (!product) throw Object.assign(new Error("A cart product is no longer available."), { status: 404 });
+      if (Number(product.quantity) < quantity) throw Object.assign(new Error("One or more cart quantities are no longer available."), { status: 400 });
+      const total = Number(product.price) * quantity;
+      const status = paymentMethod === 'ONLINE' ? 'Awaiting Payment' : 'Accepted';
+      const [result] = await connection.execute(
+        `INSERT INTO orders (product_id, business_id, farmer_id, quantity, unit_price, total, status, delivery_address_id, delivery_name, delivery_phone, delivery_address, payment_method, payment_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
+        [productId, req.user.id, product.farmer_id, quantity, product.price, total, status, address.id, address.recipient_name, address.phone, fullAddress, paymentMethod]
+      );
+      const orderId = result.insertId, trackingCode = `FL-${String(orderId).padStart(8, '0')}`;
+      await connection.execute("UPDATE orders SET tracking_code = ? WHERE id = ?", [trackingCode, orderId]);
+      await connection.execute("INSERT INTO order_tracking_events (order_id, status, note) VALUES (?, ?, ?)", [orderId, status, paymentMethod === 'ONLINE' ? 'Waiting for online payment.' : 'Order accepted automatically because stock is available.']);
+      await connection.execute("UPDATE products SET quantity = quantity - ? WHERE id = ?", [quantity, productId]);
+      createdOrders.push({ orderId, total });
+    }
+    await connection.commit();
+    return res.status(201).json({ message: "Cart order placed successfully.", orders: createdOrders, total: createdOrders.reduce((sum, order) => sum + order.total, 0) });
+  } catch (error) {
+    if (connection) await connection.rollback();
+    return res.status(error.status || 500).json({ message: error.status ? error.message : "Could not place cart order." });
+  } finally { if (connection) connection.release(); }
+};
+
+// Small aggregate endpoint for dashboard cards. Keeping these totals on the
+// server means the numbers are correct even while the detailed order list is
+// still refreshing in the browser.
+export const getOrderSummary = async (req, res) => {
+  try {
+    const ownerColumn = req.user.accountType === "farmer"
+      ? "farmer_id"
+      : req.user.accountType === "business"
+        ? "business_id"
+        : null;
+
+    if (!ownerColumn) {
+      return res.status(403).json({ message: "You cannot view order statistics." });
+    }
+
+    const [rows] = await pool.execute(
+      `SELECT
+         COUNT(*) AS totalOrders,
+         COALESCE(SUM(status = 'Delivered'), 0) AS completedOrders,
+         COALESCE(SUM(CASE WHEN status = 'Delivered' THEN total ELSE 0 END), 0) AS completedTotal
+       FROM orders
+       WHERE ${ownerColumn} = ? AND status NOT IN ('Cancelled', 'CANCELLED_BY_BUYER')`,
+      [req.user.id]
+    );
+
+    const summary = rows[0];
+    return res.json({
+      totalOrders: Number(summary.totalOrders),
+      completedOrders: Number(summary.completedOrders),
+      completedTotal: Number(summary.completedTotal),
+    });
+  } catch (error) {
+    console.error("Get order summary error:", error);
+    return res.status(500).json({ message: "Could not load order statistics." });
   }
 };
 
@@ -335,16 +426,18 @@ export const getOrderTracking = async (req, res) => {
     // ownershipColumn is selected only from the two fixed strings above.
     const [orders] = await pool.execute(
       `SELECT
-        id,
-        status,
-        payment_method AS paymentMethod,
-        payment_status AS paymentStatus,
-        tracking_code AS trackingCode,
-        delivery_name AS deliveryName,
-        delivery_phone AS deliveryPhone,
-        delivery_address AS deliveryAddress
-      FROM orders
-      WHERE id = ? AND ${ownershipColumn} = ?`,
+        o.id,
+        o.status,
+        o.payment_method AS paymentMethod,
+        o.payment_status AS paymentStatus,
+        o.tracking_code AS trackingCode,
+        o.delivery_name AS deliveryName,
+        o.delivery_phone AS deliveryPhone,
+        o.delivery_address AS deliveryAddress,
+        p.location AS farmLocation
+      FROM orders o
+      JOIN products p ON p.id = o.product_id
+      WHERE o.id = ? AND o.${ownershipColumn} = ?`,
       [orderId, userId]
     );
 
@@ -540,6 +633,142 @@ export const updateOrderStatus = async (req, res) => {
     if (connection) {
       connection.release();
     }
+  }
+};
+
+// A buyer or farmer can cancel an order while it has not yet left for delivery.
+// The reserved quantity is restored atomically, so it immediately becomes
+// available in the marketplace again.
+export const cancelOrder = async (req, res) => {
+  let connection;
+  let transactionStarted = false;
+
+  try {
+    const orderId = Number(req.params.id);
+    const userId = req.user.id;
+    const accountType = req.user.accountType;
+    const { reason, customReason } = req.body;
+    const buyerReasons = ["I ordered by mistake", "I found a better price elsewhere", "I no longer need the product", "Delivery is taking too long", "I ordered the wrong quantity", "I want to change the order", "Payment-related issue", "Other reason"];
+    const sellerReasons = ["Product is out of stock", "Unable to fulfill the requested quantity", "Product quality issue", "Product is no longer available", "Unable to deliver the order", "Price or order information issue", "Unexpected business/operational issue", "Buyer requested cancellation", "Other reason"];
+    const allowedReasons = accountType === "farmer" ? sellerReasons : buyerReasons;
+    if (!allowedReasons.includes(reason)) return res.status(400).json({ message: "Please select a valid cancellation reason." });
+    const finalReason = reason === "Other reason" ? String(customReason || "").trim() : reason;
+    if (!finalReason) return res.status(400).json({ message: "Please enter your cancellation reason." });
+
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      return res.status(400).json({ message: "Invalid order ID." });
+    }
+
+    const ownershipColumn = accountType === "farmer" ? "farmer_id" : "business_id";
+    const allowedStatuses = accountType === "farmer"
+      ? ["Pending", "Accepted"]
+      : ["Awaiting Payment", "Pending", "Accepted"];
+
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+
+    const [orders] = await connection.execute(
+      `SELECT o.id, o.product_id, o.farmer_id, o.quantity, o.status,
+              p.name AS productName, b.name AS buyerName
+       FROM orders o
+       JOIN products p ON p.id = o.product_id
+       JOIN users b ON b.id = o.business_id
+       WHERE o.id = ? AND o.${ownershipColumn} = ?
+       FOR UPDATE`,
+      [orderId, userId]
+    );
+
+    const order = orders[0];
+
+    if (!order) {
+      await connection.rollback();
+      transactionStarted = false;
+      return res.status(404).json({ message: "Order not found." });
+    }
+
+    if (!allowedStatuses.includes(order.status)) {
+      await connection.rollback();
+      transactionStarted = false;
+      return res.status(400).json({
+        message: "This order can no longer be cancelled because delivery has started or it is already complete.",
+      });
+    }
+
+    await connection.execute(
+      "UPDATE products SET quantity = quantity + ? WHERE id = ?",
+      [order.quantity, order.product_id]
+    );
+
+    const cancelledStatus = accountType === "business" ? "CANCELLED_BY_BUYER" : "Cancelled";
+    const actorRole = accountType === "farmer" ? "FARMER" : "BUYER";
+    await connection.execute(
+      `UPDATE orders
+       SET status = ?, cancelled_by_user_id = ?, cancelled_by_role = ?, cancellation_reason = ?, cancelled_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [cancelledStatus, userId, actorRole, finalReason, order.id]
+    );
+
+    const actor = accountType === "farmer" ? "seller" : "buyer";
+    await connection.execute(
+      `INSERT INTO order_tracking_events (order_id, status, note)
+       VALUES (?, ?, ?)`,
+      [order.id, cancelledStatus, `Order cancelled by the ${actor}: ${finalReason}. Stock has been restored.`]
+    );
+
+    // A buyer cancellation must remain visible to the seller after cancelled
+    // orders leave the regular orders list.
+    if (accountType === "business") {
+      await connection.execute(
+        `INSERT INTO order_notifications (user_id, order_id, type, title, message)
+         VALUES (?, ?, 'ORDER_CANCELLED_BY_BUYER', 'Order Cancelled', ?)
+         ON DUPLICATE KEY UPDATE id = id`,
+        [order.farmer_id, order.id, `${order.buyerName} cancelled Order #${order.id} (${order.productName}). Reason: ${finalReason}`]
+      );
+    }
+
+    await connection.commit();
+    transactionStarted = false;
+
+    return res.json({ message: "Order cancelled successfully. Stock has been restored." });
+  } catch (error) {
+    console.error("Cancel order error:", error);
+    if (connection && transactionStarted) await connection.rollback();
+    return res.status(500).json({ message: "Could not cancel order." });
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
+export const getOrderNotifications = async (req, res) => {
+  try {
+    if (req.user.accountType !== "farmer") return res.json([]);
+    const [notifications] = await pool.execute(
+      `SELECT id, order_id AS orderId, type, title, message,
+              is_read AS isRead, created_at AS createdAt
+       FROM order_notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 20`, [req.user.id]
+    );
+    return res.json(notifications);
+  } catch (error) {
+    console.error("Get order notifications error:", error);
+    return res.status(500).json({ message: "Could not load notifications." });
+  }
+};
+
+export const markOrderNotificationRead = async (req, res) => {
+  try {
+    if (req.user.accountType !== "farmer") return res.status(403).json({ message: "Farmer access required." });
+    const notificationId = Number(req.params.notificationId);
+    if (!Number.isInteger(notificationId) || notificationId <= 0) return res.status(400).json({ message: "Invalid notification ID." });
+    const [result] = await pool.execute(
+      "UPDATE order_notifications SET is_read = TRUE WHERE id = ? AND user_id = ?",
+      [notificationId, req.user.id]
+    );
+    if (result.affectedRows === 0) return res.status(404).json({ message: "Notification not found." });
+    return res.json({ message: "Notification marked as read." });
+  } catch (error) {
+    console.error("Mark notification read error:", error);
+    return res.status(500).json({ message: "Could not update notification." });
   }
 };
 

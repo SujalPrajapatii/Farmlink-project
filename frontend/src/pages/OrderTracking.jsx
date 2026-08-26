@@ -4,7 +4,7 @@ import { api } from "../api";
 
 const deliverySteps = [
   { status: "Pending", label: "Order placed", icon: "1" },
-  { status: "Accepted", label: "Farmer confirmed", icon: "2" },
+  { status: "Accepted", label: "Order confirmed", icon: "2" },
   { status: "Out for Delivery", label: "Out for delivery", icon: "3" },
   { status: "Delivered", label: "Delivered", icon: "✓" },
 ];
@@ -53,7 +53,7 @@ function OrderTracking() {
 
   const deliveryState = useMemo(() => {
     if (!trackingData) return { activeIndex: 0, cancelled: false };
-    const cancelled = trackingData.order.status === "Cancelled";
+    const cancelled = ["Cancelled", "CANCELLED_BY_BUYER"].includes(trackingData.order.status);
     const activeIndex = deliverySteps.findIndex(
       (step) => step.status === trackingData.order.status
     );
@@ -90,10 +90,18 @@ function OrderTracking() {
   const mapLink = latestLocation
     ? `https://www.google.com/maps?q=${latestLocation.latitude},${latestLocation.longitude}`
     : null;
+  const farmMapLink = order.farmLocation
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.farmLocation)}`
+    : null;
+  const directionsLink = latestLocation
+    ? `https://www.google.com/maps/dir/?api=1&origin=${latestLocation.latitude},${latestLocation.longitude}&destination=${encodeURIComponent(order.deliveryAddress)}`
+    : farmMapLink
+      ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(order.farmLocation)}&destination=${encodeURIComponent(order.deliveryAddress)}`
+      : null;
   const statusText = deliveryState.cancelled
     ? "This order was cancelled"
     : order.status === "Delivered"
-      ? "Delivered successfully"
+      ? "Order complete"
       : order.status === "Out for Delivery"
         ? "Your order is on the way"
         : order.status === "Awaiting Payment"
@@ -182,6 +190,10 @@ function OrderTracking() {
               <strong>{order.paymentMethod} · {order.paymentStatus}</strong>
               <span>Tracking code</span>
               <strong>{order.trackingCode || "Will be assigned soon"}</strong>
+              <div className="tracking-detail-divider" />
+              <span>Farm location</span>
+              <strong>{order.farmLocation || "Farm location is not available"}</strong>
+              {farmMapLink && <a href={farmMapLink} target="_blank" rel="noreferrer">View farmer's farm ↗</a>}
             </section>
 
             <section className="tracking-panel tracking-location">
@@ -192,9 +204,13 @@ function OrderTracking() {
                   <p>{latestLocation.note}</p>
                   <time>Updated {formatDate(latestLocation.createdAt)}</time>
                   <a className="tracking-map-link" href={mapLink} target="_blank" rel="noreferrer">Open live location ↗</a>
+                  {directionsLink && <a className="tracking-map-link" href={directionsLink} target="_blank" rel="noreferrer">Directions to delivery address ↗</a>}
                 </>
               ) : (
-                <p>The farmer can share a live location once the order is out for delivery.</p>
+                <>
+                  <p>The farmer's location will appear here when delivery starts.</p>
+                  {directionsLink && <a className="tracking-map-link" href={directionsLink} target="_blank" rel="noreferrer">View farm-to-delivery route ↗</a>}
+                </>
               )}
             </section>
           </aside>

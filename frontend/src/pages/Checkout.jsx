@@ -6,8 +6,13 @@ function Checkout() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Product is passed from BusinessDashboard when buyer clicks Buy Now.
+  // Buy now provides one item; Cart provides many items in one checkout.
   const product = location.state?.product;
+  const [cartItems, setCartItems] = useState(() => location.state?.cart?.length
+    ? location.state.cart
+    : product ? [{ product, quantity: Number(location.state?.quantity || 1) }]
+      : JSON.parse(localStorage.getItem("farmlinkCart") || "[]"));
+  useEffect(() => { localStorage.setItem("farmlinkCart", JSON.stringify(cartItems)); }, [cartItems]);
 
   const currentUser = JSON.parse(
     localStorage.getItem("farmlinkCurrentUser") || "null"
@@ -17,9 +22,6 @@ function Checkout() {
 
   const [addresses, setAddresses] = useState([]);
   const [selectedAddressId, setSelectedAddressId] = useState("");
-  const [quantity, setQuantity] = useState(
-  location.state?.quantity || 1
-);
   const [paymentMethod, setPaymentMethod] = useState("COD");
 
   const [showAddressForm, setShowAddressForm] = useState(false);
@@ -78,8 +80,7 @@ function Checkout() {
     );
   }
 
-  // If buyer opens /checkout directly without selecting a product.
-  if (!product) {
+  if (cartItems.length === 0) {
     return (
       <div className="auth-page">
         <div className="auth-card">
@@ -94,12 +95,11 @@ function Checkout() {
     );
   }
 
-  const orderQuantity = Number(quantity);
-  const productPrice = Number(product.price);
-  const orderTotal =
-    Number.isFinite(orderQuantity) && Number.isFinite(productPrice)
-      ? orderQuantity * productPrice
-      : 0;
+  const orderTotal = cartItems.reduce((total, item) => total + Number(item.product.price) * Number(item.quantity), 0);
+  function changeCartQuantity(productId, nextQuantity) {
+    setCartItems((items) => items.map((item) => item.product.id === productId ? { ...item, quantity: nextQuantity } : item));
+  }
+  function removeCartItem(productId) { setCartItems((items) => items.filter((item) => item.product.id !== productId)); }
 
   function handleAddressChange(event) {
     const { name, value, type, checked } = event.target;
@@ -177,21 +177,6 @@ function Checkout() {
           color: "#2f7d32",
         },
 
-        config: {
-  display: {
-    blocks: {
-      upi: {
-        name: "Pay using UPI",
-        instruments: [{ method: "upi" }],
-      },
-    },
-    sequence: ["block.upi"],
-    preferences: {
-      show_default_blocks: false,
-    },
-  },
-},
-
         handler: (response) => {
           resolve(response);
         },
@@ -222,26 +207,18 @@ function Checkout() {
       return;
     }
 
-    if (
-      !Number.isInteger(orderQuantity) ||
-      orderQuantity < 1 ||
-      orderQuantity > Number(product.quantity)
-    ) {
-      alert(
-        `Enter a whole quantity between 1 and ${product.quantity}.`
-      );
+    if (cartItems.some((item) => !Number.isInteger(Number(item.quantity)) || Number(item.quantity) < 1 || Number(item.quantity) > Number(item.product.quantity))) {
+      alert("One or more cart quantities are not available.");
       return;
     }
 
     try {
       setPlacingOrder(true);
 
-      // Create FarmLink order first.
-      const orderResult = await api("/orders", {
+      const orderResult = await api("/orders/cart", {
         method: "POST",
         body: JSON.stringify({
-          productId: product.id,
-          quantity: orderQuantity,
+          items: cartItems.map((item) => ({ productId: item.product.id, quantity: Number(item.quantity) })),
           addressId: Number(selectedAddressId),
           paymentMethod,
         }),
@@ -250,20 +227,22 @@ function Checkout() {
       // COD does not open Razorpay.
       if (paymentMethod === "COD") {
         alert(
-          "Cash on Delivery order placed successfully. The farmer will review it."
+          "Order placed and accepted automatically. The farmer will arrange delivery."
         );
 
+        localStorage.removeItem("farmlinkCart");
         navigate("/business-dashboard");
         return;
       }
 
       // ONLINE opens Razorpay, then sends payment response to backend.
-      await payOnline(orderResult.orderId);
+      for (const order of orderResult.orders) await payOnline(order.orderId);
 
       alert(
-        "Online payment successful. The farmer will now review your order."
+        "Online payment successful. Your order has been accepted and is ready for delivery."
       );
 
+      localStorage.removeItem("farmlinkCart");
       navigate("/business-dashboard");
     } catch (error) {
       alert(error.message);
@@ -283,34 +262,15 @@ function Checkout() {
         <p>Review your order, delivery address, and payment method.</p>
 
         <section className="checkout-summary">
-          <h2>Product Details</h2>
-          <p>
-            <strong>Product:</strong> {product.name}
-          </p>
-          <p>
-            <strong>Farmer:</strong> {product.ownerName}
-          </p>
-          <p>
-            <strong>Available Stock:</strong> {product.quantity}{" "}
-            {product.unit}
-          </p>
-          <p>
-            <strong>Price:</strong> ₹{product.price} / {product.unit}
-          </p>
+          <h2>Cart Items</h2>
+          {cartItems.map((item) => <div className="cart-checkout-item" key={item.product.id}>
+            <div><strong>{item.product.name}</strong><p>{item.product.category} · ₹{item.product.price} / {item.product.unit}</p></div>
+            <label>Quantity <input type="number" min="1" max={item.product.quantity} value={item.quantity} onChange={(event) => changeCartQuantity(item.product.id, event.target.value)} /></label>
+            <button className="cancel-btn" type="button" onClick={() => removeCartItem(item.product.id)}>Remove</button>
+          </div>)}
         </section>
 
         <form onSubmit={placeOrder}>
-          <label>Order Quantity</label>
-          <input
-            type="number"
-            min="1"
-            step="1"
-            max={product.quantity}
-            value={quantity}
-            onChange={(event) => setQuantity(event.target.value)}
-            required
-          />
-
           <p>
             <strong>Total Amount: ₹{orderTotal.toFixed(2)}</strong>
           </p>
@@ -491,7 +451,7 @@ function Checkout() {
           <button
             className="register-btn full-width"
             type="submit"
-            disabled={placingOrder}
+            disabled={placingOrder || cartItems.length === 0}
           >
             {placingOrder
               ? "Processing..."

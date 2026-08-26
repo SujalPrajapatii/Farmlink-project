@@ -16,13 +16,14 @@ export async function ensureOrderTrackingSchema() {
   if (
     statusColumns[0] &&
     (!statusColumns[0].columnType.includes("Awaiting Payment") ||
-      !statusColumns[0].columnType.includes("Out for Delivery"))
+      !statusColumns[0].columnType.includes("Out for Delivery") ||
+      !statusColumns[0].columnType.includes("CANCELLED_BY_BUYER"))
   ) {
     await pool.execute(
       `ALTER TABLE orders
        MODIFY status ENUM(
          'Awaiting Payment', 'Pending', 'Accepted',
-         'Out for Delivery', 'Delivered', 'Cancelled'
+         'Out for Delivery', 'Delivered', 'Cancelled', 'CANCELLED_BY_BUYER'
        ) NULL DEFAULT 'Pending'`
     );
   }
@@ -39,6 +40,19 @@ export async function ensureOrderTrackingSchema() {
     await pool.execute(
       "ALTER TABLE orders ADD COLUMN tracking_code VARCHAR(100) NULL"
     );
+  }
+
+  const cancellationColumns = [
+    ["cancelled_by_user_id", "BIGINT UNSIGNED NULL"],
+    ["cancelled_by_role", "VARCHAR(20) NULL"],
+    ["cancellation_reason", "VARCHAR(255) NULL"],
+    ["cancelled_at", "TIMESTAMP NULL"],
+  ];
+  for (const [column, definition] of cancellationColumns) {
+    const [existing] = await pool.execute(
+      `SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'orders' AND column_name = ?`, [column]
+    );
+    if (existing.length === 0) await pool.execute(`ALTER TABLE orders ADD COLUMN ${column} ${definition}`);
   }
 
   await pool.execute(`
@@ -63,4 +77,32 @@ export async function ensureOrderTrackingSchema() {
       INDEX idx_delivery_locations_order_created (order_id, created_at)
     ) ENGINE=InnoDB
   `);
+
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS order_notifications (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      user_id BIGINT UNSIGNED NOT NULL,
+      order_id BIGINT UNSIGNED NOT NULL,
+      message VARCHAR(500) NOT NULL,
+      is_read BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_order_notifications_user_created (user_id, created_at)
+    ) ENGINE=InnoDB
+  `);
+
+  const notificationColumns = [["type", "VARCHAR(80) NULL"], ["title", "VARCHAR(120) NULL"]];
+  for (const [column, definition] of notificationColumns) {
+    const [existing] = await pool.execute(
+      `SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'order_notifications' AND column_name = ?`,
+      [column]
+    );
+    if (existing.length === 0) await pool.execute(`ALTER TABLE order_notifications ADD COLUMN ${column} ${definition}`);
+  }
+
+  const [notificationEventIndex] = await pool.execute(
+    `SELECT 1 FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'order_notifications' AND index_name = 'uniq_order_notification_event'`
+  );
+  if (notificationEventIndex.length === 0) {
+    await pool.execute("CREATE UNIQUE INDEX uniq_order_notification_event ON order_notifications (user_id, order_id, type)");
+  }
 }

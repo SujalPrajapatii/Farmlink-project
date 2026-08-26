@@ -3,118 +3,76 @@ import { createPortal } from "react-dom";
 import { useLocation } from "react-router-dom";
 
 const LanguageContext = createContext(null);
-const originalTextNodes = new WeakMap();
-const originalPlaceholders = new WeakMap();
+const originalText = new WeakMap();
+const originalAttributes = new WeakMap();
+const appliedText = new WeakMap();
+const appliedAttributes = new WeakMap();
 
-const translations = {
-  english: {},
-  hindi: {
-    "Language": "भाषा", "English": "अंग्रेज़ी", "Hindi": "हिन्दी", "Gujarati": "गुजराती",
-    "Home": "होम", "How It Works": "यह कैसे काम करता है", "Categories": "श्रेणियां", "Login": "लॉग इन", "Register": "रजिस्टर",
-    "Fresh Produce. Fair Prices. Direct Connections.": "ताज़ी उपज। उचित दाम। सीधे संपर्क।",
-    "DIRECT FARMER-TO-BUSINESS MARKETPLACE": "किसान से व्यवसाय तक सीधा बाज़ार",
-    "I am a Farmer": "मैं किसान हूँ", "I am a Business": "मैं व्यवसाय हूँ", "Fresh from Farms": "सीधे खेतों से",
-    "Farmers": "किसान", "Businesses": "व्यवसाय", "Product Listings": "उत्पाद लिस्टिंग", "Crop Categories": "फसल श्रेणियां",
-    "SIMPLE PROCESS": "सरल प्रक्रिया", "How FarmLink Works": "FarmLink कैसे काम करता है", "Farmers List Stock": "किसान स्टॉक जोड़ते हैं",
-    "Businesses Search": "व्यवसाय खोजते हैं", "Order & Delivery": "ऑर्डर और डिलीवरी", "CROP CATEGORIES": "फसल श्रेणियां",
-    "Find What You Need": "अपनी ज़रूरत खोजें", "Vegetables": "सब्ज़ियां", "Fruits": "फल", "Grains": "अनाज", "Pulses": "दालें",
-    "Welcome Back": "वापसी पर स्वागत है", "Email Address": "ईमेल पता", "Password": "पासवर्ड", "Create an account": "खाता बनाएं", "Back to FarmLink": "FarmLink पर वापस",
-    "Access denied": "पहुंच अस्वीकृत", "Go to Login": "लॉग इन करें", "Logout": "लॉग आउट", "Dashboard": "डैशबोर्ड",
-    "FARMER DASHBOARD": "किसान डैशबोर्ड", "BUSINESS DASHBOARD": "व्यवसाय डैशबोर्ड", "My Products": "मेरे उत्पाद",
-    "My Orders": "मेरे ऑर्डर", "Orders": "ऑर्डर", "Add Product": "उत्पाद जोड़ें", "Add New": "नया जोड़ें",
-    "Active Products": "सक्रिय उत्पाद", "Pending Orders": "लंबित ऑर्डर", "Completed Orders": "पूर्ण ऑर्डर", "Total Sales": "कुल बिक्री",
-    "My Product Listings": "मेरी उत्पाद लिस्टिंग", "No products added yet": "अभी कोई उत्पाद नहीं जोड़ा गया", "Edit": "संपादित करें", "Delete": "हटाएं",
-    "Marketplace": "बाज़ार", "Available Products": "उपलब्ध उत्पाद", "No products found": "कोई उत्पाद नहीं मिला",
-    "Order Quantity": "ऑर्डर मात्रा", "Buy Now": "अभी खरीदें", "Checkout": "चेकआउट", "Product Details": "उत्पाद विवरण",
-    "Delivery Address": "डिलीवरी पता", "Payment Method": "भुगतान विधि", "Place Order": "ऑर्डर करें",
-    "Back to Home": "होम पर जाएं", "Back to all categories": "सभी श्रेणियों पर जाएं", "CROP CATEGORY": "फसल श्रेणी",
-    "Loading products...": "उत्पाद लोड हो रहे हैं...", "No products": "कोई उत्पाद नहीं", "Farmer:": "किसान:", "Available:": "उपलब्ध:",
-    "Accept": "स्वीकार करें", "Cancel": "रद्द करें", "Start Delivery": "डिलीवरी शुरू करें", "Mark Delivered": "डिलीवर किया गया", "View Tracking": "ट्रैकिंग देखें",
-    "Order timeline": "ऑर्डर समयरेखा", "Payment": "भुगतान", "Refresh": "रीफ़्रेश", "Search crop, category, or location...": "फसल, श्रेणी या स्थान खोजें...",
-    "Enter your email": "अपना ईमेल दर्ज करें", "Enter your password": "अपना पासवर्ड दर्ज करें", "Product Name": "उत्पाद का नाम", "Category": "श्रेणी", "Location": "स्थान"
-  },
-  gujarati: {
-    "Language": "ભાષા", "English": "અંગ્રેજી", "Hindi": "હિન્દી", "Gujarati": "ગુજરાતી",
-    "Home": "હોમ", "How It Works": "તે કેવી રીતે કામ કરે છે", "Categories": "શ્રેણીઓ", "Login": "લૉગ ઇન", "Register": "નોંધણી",
-    "Fresh Produce. Fair Prices. Direct Connections.": "તાજી ઉપજ. વાજબી ભાવ. સીધા જોડાણો.",
-    "DIRECT FARMER-TO-BUSINESS MARKETPLACE": "ખેડૂતથી વ્યવસાય સુધીનું સીધું બજાર",
-    "I am a Farmer": "હું ખેડૂત છું", "I am a Business": "હું વ્યવસાય છું", "Fresh from Farms": "ખેતરમાંથી તાજું",
-    "Farmers": "ખેડૂતો", "Businesses": "વ્યવસાયો", "Product Listings": "ઉત્પાદન યાદીઓ", "Crop Categories": "પાકની શ્રેણીઓ",
-    "SIMPLE PROCESS": "સરળ પ્રક્રિયા", "How FarmLink Works": "FarmLink કેવી રીતે કામ કરે છે", "Farmers List Stock": "ખેડૂતો સ્ટોક ઉમેરે છે",
-    "Businesses Search": "વ્યવસાયો શોધે છે", "Order & Delivery": "ઓર્ડર અને ડિલિવરી", "CROP CATEGORIES": "પાકની શ્રેણીઓ",
-    "Find What You Need": "તમારી જરૂરિયાત શોધો", "Vegetables": "શાકભાજી", "Fruits": "ફળો", "Grains": "અનાજ", "Pulses": "કઠોળ",
-    "Welcome Back": "પાછા આવકાર", "Email Address": "ઈમેલ સરનામું", "Password": "પાસવર્ડ", "Create an account": "ખાતું બનાવો", "Back to FarmLink": "FarmLink પર પાછા જાઓ",
-    "Access denied": "પ્રવેશ નકારવામાં આવ્યો", "Go to Login": "લૉગ ઇન પર જાઓ", "Logout": "લૉગ આઉટ", "Dashboard": "ડેશબોર્ડ",
-    "FARMER DASHBOARD": "ખેડૂત ડેશબોર્ડ", "BUSINESS DASHBOARD": "વ્યવસાય ડેશબોર્ડ", "My Products": "મારા ઉત્પાદનો",
-    "My Orders": "મારા ઓર્ડર", "Orders": "ઓર્ડર", "Add Product": "ઉત્પાદન ઉમેરો", "Add New": "નવું ઉમેરો",
-    "Active Products": "સક્રિય ઉત્પાદનો", "Pending Orders": "બાકી ઓર્ડર", "Completed Orders": "પૂર્ણ ઓર્ડર", "Total Sales": "કુલ વેચાણ",
-    "My Product Listings": "મારી ઉત્પાદન યાદીઓ", "No products added yet": "હજુ કોઈ ઉત્પાદન ઉમેરાયું નથી", "Edit": "ફેરફાર કરો", "Delete": "કાઢી નાખો",
-    "Marketplace": "બજાર", "Available Products": "ઉપલબ્ધ ઉત્પાદનો", "No products found": "કોઈ ઉત્પાદન મળ્યું નથી",
-    "Order Quantity": "ઓર્ડર જથ્થો", "Buy Now": "હમણાં ખરીદો", "Checkout": "ચેકઆઉટ", "Product Details": "ઉત્પાદન વિગતો",
-    "Delivery Address": "ડિલિવરી સરનામું", "Payment Method": "ચુકવણી પદ્ધતિ", "Place Order": "ઓર્ડર કરો",
-    "Back to Home": "હોમ પર જાઓ", "Back to all categories": "બધી શ્રેણીઓ પર જાઓ", "CROP CATEGORY": "પાક શ્રેણી",
-    "Loading products...": "ઉત્પાદનો લોડ થઈ રહ્યા છે...", "No products": "કોઈ ઉત્પાદન નથી", "Farmer:": "ખેડૂત:", "Available:": "ઉપલબ્ધ:",
-    "Accept": "સ્વીકારો", "Cancel": "રદ કરો", "Start Delivery": "ડિલિવરી શરૂ કરો", "Mark Delivered": "પહોંચાડેલ તરીકે ચિહ્નિત કરો", "View Tracking": "ટ્રેકિંગ જુઓ",
-    "Order timeline": "ઓર્ડર સમયરેખા", "Payment": "ચુકવણી", "Refresh": "તાજું કરો", "Search crop, category, or location...": "પાક, શ્રેણી અથવા સ્થાન શોધો...",
-    "Enter your email": "તમારો ઈમેલ દાખલ કરો", "Enter your password": "તમારો પાસવર્ડ દાખલ કરો", "Product Name": "ઉત્પાદન નામ", "Category": "શ્રેણી", "Location": "સ્થાન"
-  }
+// One shared catalogue makes translation work for all routes, portals and text
+// rendered after navigation. Keys are the original UI copy to preserve legacy JSX.
+const hi = {
+  "Language":"भाषा","Choose language":"भाषा चुनें","English":"अंग्रेज़ी","Hindi":"हिन्दी","Gujarati":"गुजराती","Home":"होम","How It Works":"यह कैसे काम करता है","Categories":"श्रेणियाँ","Login":"लॉग इन","Log in":"लॉग इन","Logout":"लॉग आउट","Register":"रजिस्टर","Dashboard":"डैशबोर्ड","My Dashboard":"मेरा डैशबोर्ड","Farmers":"किसान","Buyers":"खरीदार","Businesses":"व्यवसाय","Products":"उत्पाद","Orders":"ऑर्डर","My Orders":"मेरे ऑर्डर","My Products":"मेरे उत्पाद","Marketplace":"बाज़ार","Add Product":"उत्पाद जोड़ें","Edit Product":"उत्पाद संपादित करें","Delete":"हटाएँ","Edit":"संपादित करें","Cancel":"रद्द करें","Cancel Order":"ऑर्डर रद्द करें","Accept":"स्वीकार करें","Start Delivery":"डिलीवरी शुरू करें","Mark Delivered":"डिलीवर के रूप में चिह्नित करें","View Tracking":"ट्रैकिंग देखें","Refresh":"रीफ़्रेश करें","Refresh data":"डेटा रीफ़्रेश करें","Loading...":"लोड हो रहा है…","Loading dashboard data...":"डैशबोर्ड डेटा लोड हो रहा है…","Loading your order journey…":"आपके ऑर्डर की जानकारी लोड हो रही है…","Refreshing…":"रीफ़्रेश हो रहा है…","Access denied":"पहुंच अस्वीकृत","Admin access only":"केवल व्यवस्थापक पहुंच","Go to Login":"लॉग इन पर जाएं","Back to Dashboard":"डैशबोर्ड पर वापस","Back to FarmLink":"FarmLink पर वापस","Back to my orders":"मेरे ऑर्डर पर वापस","Product Name":"उत्पाद का नाम","Category":"श्रेणी","Location":"स्थान","Available Quantity":"उपलब्ध मात्रा","Unit":"इकाई","Price Per Unit (₹)":"प्रति इकाई मूल्य (₹)","Image URL (optional)":"छवि URL (वैकल्पिक)","Select category":"श्रेणी चुनें","Vegetables":"सब्ज़ियाँ","Fruits":"फल","Grains":"अनाज","Pulses":"दालें","Other":"अन्य","Example: Fresh Tomatoes":"उदाहरण: ताज़े टमाटर","Example: 100":"उदाहरण: 100","Example: 30":"उदाहरण: 30","Example: Nashik, Maharashtra":"उदाहरण: नासिक, महाराष्ट्र","Paste an image link":"छवि लिंक चिपकाएँ","Paste an image URL":"छवि URL चिपकाएँ","Email Address":"ईमेल पता","Password":"पासवर्ड","Full Name":"पूरा नाम","Account Type":"खाता प्रकार","Choose role":"भूमिका चुनें","Farmer":"किसान","Business Buyer":"व्यावसायिक खरीदार","Your full name":"आपका पूरा नाम","Enter your password":"अपना पासवर्ड दर्ज करें","At least 6 characters":"कम से कम 6 अक्षर","Welcome Back":"वापसी पर स्वागत है","WELCOME BACK":"वापसी पर स्वागत है","JOIN FARMLINK":"FARMLINK से जुड़ें","Create your account":"अपना खाता बनाएं","Create account":"खाता बनाएं","Already have an account?":"क्या आपके पास पहले से खाता है?","New to FarmLink?":"FarmLink पर नए हैं?","Log in to FarmLink":"FarmLink में लॉग इन करें","Trade fresh.":"ताज़ा व्यापार करें।","Grow together.":"साथ मिलकर बढ़ें।","Your harvest.":"आपकी फसल।","A bigger market.":"एक बड़ा बाज़ार।","DIRECT FARMER-TO-BUSINESS MARKETPLACE":"किसान से व्यवसाय तक सीधा बाज़ार","GROW MORE. TRADE SMARTER.":"अधिक उगाएं। समझदारी से व्यापार करें।","Fresh from the farm,":"खेत से ताज़ा,","straight to your business.":"सीधे आपके व्यवसाय तक।","Start selling":"बेचना शुरू करें","Explore produce":"उत्पाद देखें","Farm to business":"खेत से व्यवसाय तक","One simple platform":"एक सरल मंच","Trusted trade":"विश्वसनीय व्यापार","Fresh vegetables ready for market":"बाज़ार के लिए तैयार ताज़ी सब्ज़ियाँ","Fresh vegetables in a market":"बाज़ार में ताज़ी सब्ज़ियाँ","FarmLink community":"FarmLink समुदाय","Farmers growing with us":"हमारे साथ बढ़ते किसान","Active business buyers":"सक्रिय व्यावसायिक खरीदार","Product listings":"उत्पाद सूची","Crop categories":"फसल श्रेणियाँ","ONE PLATFORM, CLEARER TRADE":"एक मंच, स्पष्ट व्यापार","A better way to move produce.":"उत्पाद पहुँचाने का बेहतर तरीका।","List your harvest":"अपनी फसल सूचीबद्ध करें","Find the right match":"सही विकल्प खोजें","Trade with confidence":"विश्वास के साथ व्यापार करें","SEASONAL & FRESH":"मौसमी और ताज़ा","Explore farm produce.":"खेत की उपज देखें।","Explore →":"देखें →","READY WHEN YOU ARE":"जब आप तैयार हों","Grow your market with FarmLink.":"FarmLink के साथ अपना बाज़ार बढ़ाएं।","Direct trade. Better outcomes.":"सीधा व्यापार। बेहतर परिणाम।","FARMER DASHBOARD":"किसान डैशबोर्ड","BUSINESS DASHBOARD":"व्यवसाय डैशबोर्ड","ADMIN DASHBOARD":"व्यवस्थापक डैशबोर्ड","Platform overview":"मंच का अवलोकन","Overview":"अवलोकन","Registered farmers":"पंजीकृत किसान","Registered buyers":"पंजीकृत खरीदार","All product listings":"सभी उत्पाद सूचियाँ","All orders":"सभी ऑर्डर","No records yet.":"अभी कोई रिकॉर्ड नहीं है।","Name":"नाम","Email":"ईमेल","Joined":"जुड़े","Product":"उत्पाद","Stock":"स्टॉक","Price":"मूल्य","Total":"कुल","Status":"स्थिति","Payment":"भुगतान","Date":"तारीख","Order value":"ऑर्डर मूल्य","Delivered sales":"डिलीवर की गई बिक्री","Available Products":"उपलब्ध उत्पाद","Available produce":"उपलब्ध उपज","All produce":"सभी उपज","No products found":"कोई उत्पाद नहीं मिला","Order Quantity":"ऑर्डर मात्रा","Buy Now":"अभी खरीदें","Checkout":"चेकआउट","Delivery Address":"डिलीवरी पता","Payment Method":"भुगतान विधि","Place Order":"ऑर्डर करें","Order progress":"ऑर्डर प्रगति","Order timeline":"ऑर्डर समयरेखा","Order placed":"ऑर्डर दिया गया","Order confirmed":"ऑर्डर की पुष्टि हुई","Out for delivery":"डिलीवरी के लिए निकला","Delivered":"डिलीवर हो गया","Pending":"लंबित","Accepted":"स्वीकृत","Out for Delivery":"डिलीवरी के लिए निकला","Cancelled":"रद्द किया गया","Awaiting Payment":"भुगतान की प्रतीक्षा","Current stage":"वर्तमान चरण","Complete":"पूर्ण","Upcoming":"आगामी","LIVE UPDATES":"लाइव अपडेट","DELIVERY DETAILS":"डिलीवरी विवरण","DELIVERY LOCATION":"डिलीवरी स्थान","Delivering to":"इन तक पहुँचाया जा रहा है","Tracking code":"ट्रैकिंग कोड","Farm location":"खेत का स्थान","Will be assigned soon":"जल्द आवंटित किया जाएगा","Farm location is not available":"खेत का स्थान उपलब्ध नहीं है","View farmer's farm ↗":"किसान का खेत देखें ↗","Driver location shared":"ड्राइवर का स्थान साझा किया गया","Location not shared yet":"स्थान अभी साझा नहीं किया गया","Open live location ↗":"लाइव स्थान खोलें ↗","Directions to delivery address ↗":"डिलीवरी पते के निर्देश ↗","Product added successfully!":"उत्पाद सफलतापूर्वक जोड़ा गया!","Product updated successfully!":"उत्पाद सफलतापूर्वक अपडेट किया गया!","Product deleted successfully.":"उत्पाद सफलतापूर्वक हटाया गया।","Login successful!":"लॉग इन सफल रहा!","Account created successfully!":"खाता सफलतापूर्वक बनाया गया!","Order placed successfully!":"ऑर्डर सफलतापूर्वक दिया गया!","Order updated successfully.":"ऑर्डर सफलतापूर्वक अपडेट किया गया।","Delivery address saved successfully.":"डिलीवरी पता सफलतापूर्वक सहेजा गया।","Request failed.":"अनुरोध विफल रहा।","The server returned an invalid response. Please try again.":"सर्वर ने अमान्य उत्तर दिया। कृपया पुनः प्रयास करें।","Cannot reach the FarmLink server. Please make sure the backend is running and try again.":"FarmLink सर्वर से संपर्क नहीं हो सका। बैकएंड चल रहा है, इसकी पुष्टि कर पुनः प्रयास करें。"
 };
+const gu = {};
+Object.assign(hi, {
+  "Join FarmLink":"FarmLink से जुड़ें","Please log in as a farmer to continue.":"जारी रखने के लिए किसान के रूप में लॉग इन करें।","Please log in as a business buyer to continue.":"जारी रखने के लिए व्यावसायिक खरीदार के रूप में लॉग इन करें।","No product selected":"कोई उत्पाद चयनित नहीं है","Please select a product from the marketplace first.":"कृपया पहले बाज़ार से एक उत्पाद चुनें।","Product Details":"उत्पाद विवरण","Product:":"उत्पाद:","Farmer:":"किसान:","Available Stock:":"उपलब्ध स्टॉक:","Recipient Name":"प्राप्तकर्ता का नाम","Phone Number":"फ़ोन नंबर","Address Line 1":"पता पंक्ति 1","Address Line 2 (optional)":"पता पंक्ति 2 (वैकल्पिक)","City":"शहर","State":"राज्य","Add Delivery Address":"डिलीवरी पता जोड़ें","Loading product...":"उत्पाद लोड हो रहा है…","Product not found":"उत्पाद नहीं मिला","You cannot edit this product.":"आप इस उत्पाद को संपादित नहीं कर सकते।","Update your crop listing details.":"अपनी फसल सूची का विवरण अपडेट करें।","Manage your product listings and buyer orders.":"अपनी उत्पाद सूची और खरीदारों के ऑर्डर प्रबंधित करें।","Total Orders":"कुल ऑर्डर","Active Products":"सक्रिय उत्पाद","Orders to Ship":"भेजे जाने वाले ऑर्डर","Completed Orders":"पूर्ण ऑर्डर","Total Income":"कुल आय","My Product Listings":"मेरी उत्पाद सूचियाँ","No products added yet":"अभी कोई उत्पाद नहीं जोड़ा गया","Orders Received":"प्राप्त ऑर्डर","You have not received any orders yet.":"आपको अभी तक कोई ऑर्डर नहीं मिला है।","FARMLINK MARKETPLACE":"FARMLINK बाज़ार","Fresh produce, direct from farms.":"ताज़ी उपज, सीधे खेतों से।","Browse fresh produce":"ताज़ी उपज देखें","Farm-fresh quality":"खेत की ताज़ी गुणवत्ता","From verified growers":"सत्यापित उत्पादकों से","Verified farmers":"सत्यापित किसान","Trade directly with growers":"उत्पादकों से सीधे व्यापार करें","Clear pricing":"स्पष्ट मूल्य निर्धारण","No hidden marketplace fees":"कोई छिपा हुआ बाज़ार शुल्क नहीं","Live order tracking":"लाइव ऑर्डर ट्रैकिंग","Stay updated through delivery":"डिलीवरी तक अपडेट रहें","Freshness first":"ताज़गी सबसे पहले","Harvested for your business":"आपके व्यवसाय के लिए काटी गई","Total orders":"कुल ऑर्डर","Orders placed":"दिए गए ऑर्डर","Completed":"पूर्ण","Delivered successfully":"सफलतापूर्वक डिलीवर","Total spent":"कुल खर्च","Delivered orders only":"केवल डिलीवर ऑर्डर","SHOP BY CATEGORY":"श्रेणी के अनुसार खरीदें","Fresh picks for your business.":"आपके व्यवसाय के लिए ताज़ा विकल्प।","Search crop, category, or location...":"फसल, श्रेणी या स्थान खोजें...","Try another search or check again later.":"कोई अन्य खोज आज़माएं या बाद में फिर जांचें।","Loading products...":"उत्पाद लोड हो रहे हैं...","No products":"कोई उत्पाद नहीं","Back to Home":"होम पर वापस","Back to all categories":"सभी श्रेणियों पर वापस","CROP CATEGORY":"फसल श्रेणी","No delivery updates yet.":"अभी तक कोई डिलीवरी अपडेट नहीं।","We could not load this order":"हम यह ऑर्डर लोड नहीं कर सके","Updates refresh automatically every 30 seconds.":"अपडेट हर 30 सेकंड में अपने-आप रीफ़्रेश होते हैं।","This order has been cancelled. Contact the farmer if you need help.":"यह ऑर्डर रद्द कर दिया गया है। सहायता चाहिए तो किसान से संपर्क करें।","The farmer's location will appear here when delivery starts.":"डिलीवरी शुरू होने पर किसान का स्थान यहाँ दिखाई देगा।","View farm-to-delivery route ↗":"खेत से डिलीवरी का मार्ग देखें ↗","kg":"किलोग्राम","quintal":"क्विंटल","bag":"बोरा","crate":"क्रेट"
+});
+Object.assign(gu, {"Language":"ભાષા","Choose language":"ભાષા પસંદ કરો","English":"અંગ્રેજી","Hindi":"હિન્દી","Gujarati":"ગુજરાતી","Home":"હોમ","Login":"લૉગ ઇન","Logout":"લૉગ આઉટ","Register":"નોંધણી","Dashboard":"ડેશબોર્ડ","Farmers":"ખેડૂતો","Buyers":"ખરીદદારો","Products":"ઉત્પાદનો","Orders":"ઓર્ડર","Marketplace":"બજાર","Add Product":"ઉત્પાદન ઉમેરો","Edit Product":"ઉત્પાદન સંપાદિત કરો","Delete":"કાઢી નાખો","Edit":"ફેરફાર કરો","Cancel":"રદ કરો","Refresh":"તાજું કરો","Loading...":"લોડ થઈ રહ્યું છે…","Access denied":"પ્રવેશ નકારવામાં આવ્યો","Product Name":"ઉત્પાદન નામ","Category":"શ્રેણી","Location":"સ્થાન","Vegetables":"શાકભાજી","Fruits":"ફળો","Grains":"અનાજ","Pulses":"કઠોળ","Email Address":"ઈમેલ સરનામું","Password":"પાસવર્ડ","Full Name":"પૂરું નામ","Farmer":"ખેડૂત","Fresh from the farm,":"ખેતરથી તાજું,","straight to your business.":"સીધું તમારા વ્યવસાય સુધી.","Start selling":"વેચવાનું શરૂ કરો","Explore produce":"ઉત્પાદન જુઓ","Farm to business":"ખેતરથી વ્યવસાય સુધી","One simple platform":"એક સરળ પ્લેટફોર્મ","Trusted trade":"વિશ્વસનીય વેપાર","Available Products":"ઉપલબ્ધ ઉત્પાદનો","Available produce":"ઉપલબ્ધ ઉત્પાદન","All produce":"બધું ઉત્પાદન","No products found":"કોઈ ઉત્પાદન મળ્યું નથી","Order Quantity":"ઓર્ડર જથ્થો","Buy Now":"હમણાં ખરીદો","Checkout":"ચેકઆઉટ","Delivery Address":"ડિલિવરી સરનામું","Payment Method":"ચુકવણી પદ્ધતિ","Place Order":"ઓર્ડર કરો","Order timeline":"ઓર્ડર સમયરેખા","Delivered":"પહોંચાડેલ","Pending":"બાકી","Accepted":"સ્વીકારેલ","Cancelled":"રદ કરેલ","Payment":"ચુકવણી","Status":"સ્થિતિ","Product added successfully!":"ઉત્પાદન સફળતાપૂર્વક ઉમેરાયું!","Product updated successfully!":"ઉત્પાદન સફળતાપૂર્વક અપડેટ થયું!","Login successful!":"લૉગ ઇન સફળ રહ્યું!","Account created successfully!":"ખાતું સફળતાપૂર્વક બન્યું!","Request failed.":"વિનંતી નિષ્ફળ રહી।"});
+const translations = { english: {}, hindi: hi, gujarati: gu };
+const languageCodes = { hindi: "hi", gujarati: "gu" };
+const automaticTranslations = new Map();
 
-function translateText(text, language) {
-  const leading = text.match(/^\s*/)?.[0] || "";
-  const trailing = text.match(/\s*$/)?.[0] || "";
-  const original = text.trim();
-  return translations[language][original] ? `${leading}${translations[language][original]}${trailing}` : text;
+export function translate(value, language = localStorage.getItem("farmlinkLanguage") || "english") {
+  if (typeof value !== "string" || language === "english") return value;
+  const leading = value.match(/^\s*/)?.[0] || ""; const trailing = value.match(/\s*$/)?.[0] || ""; const source = value.trim();
+  return `${leading}${translations[language]?.[source] || automaticTranslations.get(`${language}:${source}`) || source}${trailing}`;
 }
-
 export function LanguageProvider({ children }) {
   const [language, setLanguage] = useState(() => localStorage.getItem("farmlinkLanguage") || "english");
   useEffect(() => localStorage.setItem("farmlinkLanguage", language), [language]);
-  return <LanguageContext.Provider value={{ language, setLanguage }}>{children}</LanguageContext.Provider>;
+  return <LanguageContext.Provider value={{ language, setLanguage, t: (value) => translate(value, language) }}>{children}</LanguageContext.Provider>;
 }
-
 export function useLanguage() { return useContext(LanguageContext); }
-
+const attrs = ["placeholder", "title", "alt", "aria-label"];
 export function PageTranslator() {
   const { language } = useLanguage();
-
   useEffect(() => {
-    const applyTranslation = () => {
-      document.documentElement.lang = language === "gujarati" ? "gu" : language === "hindi" ? "hi" : "en";
-      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-      const nodes = [];
-      while (walker.nextNode()) nodes.push(walker.currentNode);
-      nodes.forEach((node) => {
-        if (!node.parentElement?.closest("script, style, option")) {
-          if (!originalTextNodes.has(node)) originalTextNodes.set(node, node.textContent);
-          const sourceText = originalTextNodes.get(node);
-          const translated = language === "english" ? sourceText : translateText(sourceText, language);
-          if (translated !== node.textContent) node.textContent = translated;
-        }
-      });
-      document.querySelectorAll("input[placeholder], textarea[placeholder]").forEach((element) => {
-        if (!originalPlaceholders.has(element)) originalPlaceholders.set(element, element.placeholder);
-        const sourceText = originalPlaceholders.get(element);
-        element.placeholder = language === "english" ? sourceText : (translations[language][sourceText] || sourceText);
-      });
+    let disposed = false;
+    const missing = new Set();
+    const keyFor = (source) => `${language}:${source}`;
+    const sourceTranslation = (source) => translations[language]?.[source] || automaticTranslations.get(keyFor(source));
+    const queueTranslation = (source) => {
+      if (language === "english" || !source || sourceTranslation(source) || missing.has(source)) return;
+      missing.add(source);
     };
-    const timer = window.setTimeout(applyTranslation, 0);
-    const observer = new MutationObserver(() => window.setTimeout(applyTranslation, 0));
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => { window.clearTimeout(timer); observer.disconnect(); };
-  }, [language]);
-  return null;
+    const requestTranslations = async () => {
+      const sources = [...missing]; missing.clear();
+      await Promise.all(sources.map(async (source) => {
+        try {
+          const url = new URL("https://translate.googleapis.com/translate_a/single");
+          url.searchParams.set("client", "gtx"); url.searchParams.set("sl", "auto"); url.searchParams.set("tl", languageCodes[language]);
+          url.searchParams.set("dt", "t"); url.searchParams.set("q", source);
+          const response = await fetch(url); const data = await response.json();
+          const translated = data?.[0]?.map((part) => part[0]).join("");
+          if (translated) automaticTranslations.set(keyFor(source), translated);
+        } catch { /* Keep catalogue translations when the visitor is offline. */ }
+      }));
+      if (!disposed) apply();
+    };
+    const apply = () => { document.documentElement.lang = languageCodes[language] || "en";
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let node; (node = walker.nextNode());) { if (node.parentElement?.closest("script, style")) continue; if (!originalText.has(node) || (appliedText.has(node) && node.textContent !== appliedText.get(node))) originalText.set(node, node.textContent); const source = originalText.get(node); queueTranslation(source.trim()); const output = translate(source, language); if (node.textContent !== output) node.textContent = output; appliedText.set(node, output); }
+      document.querySelectorAll(attrs.map((name) => `[${name}]`).join(",")).forEach((el) => { if (!originalAttributes.has(el)) originalAttributes.set(el, {}); const sourceValues = originalAttributes.get(el), lastValues = appliedAttributes.get(el) || {}; attrs.filter((name) => el.hasAttribute(name)).forEach((name) => { const current = el.getAttribute(name); if (!(name in sourceValues) || (name in lastValues && current !== lastValues[name])) sourceValues[name] = current; const source = sourceValues[name]; queueTranslation(source); const output = translate(source, language); if (current !== output) el.setAttribute(name, output); lastValues[name] = output; }); appliedAttributes.set(el, lastValues); });
+      if (missing.size) requestTranslations();
+    };
+    let frame; const observer = new MutationObserver(() => { cancelAnimationFrame(frame); frame = requestAnimationFrame(apply); }); apply(); observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    const alert = window.alert, confirm = window.confirm; window.alert = (message) => alert(translate(String(message), language)); window.confirm = (message) => confirm(translate(String(message), language));
+    return () => { disposed = true; cancelAnimationFrame(frame); observer.disconnect(); window.alert = alert; window.confirm = confirm; };
+  }, [language]); return null;
 }
-
 export function LanguageSelector() {
-  const { language, setLanguage } = useLanguage();
-  const location = useLocation();
-  const [container, setContainer] = useState(null);
-
-  useEffect(() => {
-    setContainer(document.querySelector(".navbar") || document.querySelector(".sidebar") || document.querySelector(".tracking-header") || document.querySelector(".auth-card"));
-  }, [location.pathname]);
-
+  const { language, setLanguage, t } = useLanguage(); const location = useLocation(); const [container, setContainer] = useState(null);
+  useEffect(() => setContainer(document.querySelector(".navbar") || document.querySelector(".sidebar") || document.querySelector(".tracking-header") || document.querySelector(".auth-card")), [location.pathname]);
   if (!container) return null;
-  return createPortal(<label className="language-selector"><span>Language</span><select value={language} onChange={(event) => setLanguage(event.target.value)} aria-label="Choose language"><option value="english">English</option><option value="hindi">Hindi</option><option value="gujarati">Gujarati</option></select></label>, container);
+  return createPortal(<label className="language-selector"><span>{t("Language")}</span><select value={language} onChange={(event) => setLanguage(event.target.value)} aria-label={t("Choose language")}><option value="english">{t("English")}</option><option value="hindi">{t("Hindi")}</option><option value="gujarati">{t("Gujarati")}</option></select></label>, container);
 }

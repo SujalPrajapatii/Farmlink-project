@@ -25,7 +25,6 @@ app.post(
   paymentWebhook
 );
 
-app.use("/api/payments", paymentRoutes);
 const PORT = Number(process.env.PORT) || 5000;
 
 // CORS allows the React development server to call this backend. Vite normally
@@ -68,6 +67,11 @@ app.use(express.json({ limit: "1mb" }));
 
 // Allows backend to read normal form data if needed.
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+
+// Payment requests need the same CORS policy and JSON parsing as every other
+// API route.  Mounting these routes above the middleware made browser payment
+// requests fail before they reached their controllers.
+app.use("/api/payments", paymentRoutes);
 
 // Makes files in backend/uploads available through /uploads.
 // Example: http://localhost:5000/uploads/image.jpg

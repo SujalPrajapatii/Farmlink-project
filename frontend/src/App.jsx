@@ -12,12 +12,22 @@ import OrderTracking from "./pages/OrderTracking";
 import CategoryProducts from "./pages/CategoryProducts";
 import { LanguageProvider, LanguageSelector, PageTranslator } from "./LanguageContext";
 
-function ProtectedRoute({ children }) {
+function ProtectedRoute({ children, roles }) {
   const location = useLocation();
   const token = localStorage.getItem("farmlinkToken");
+  const currentUser = JSON.parse(localStorage.getItem("farmlinkCurrentUser") || "null");
 
   if (!token) {
     return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+
+  if (roles && !roles.includes(currentUser?.accountType)) {
+    const destination = currentUser?.accountType === "farmer"
+      ? "/farmer-dashboard"
+      : currentUser?.accountType === "business"
+        ? "/business-dashboard"
+        : "/admin-dashboard";
+    return <Navigate to={destination} replace />;
   }
 
   return children;
@@ -33,21 +43,15 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route path="/farmer-dashboard" element={<FarmerDashboard />} />
-        <Route path="/business-dashboard" element={<BusinessDashboard />} />
-        <Route path="/admin-dashboard" element={<AdminDashboard />} />
-        <Route path="/add-product" element={<AddProduct />} />
-        <Route path="/edit-product/:id" element={<EditProduct />} />
-        <Route path="/checkout" element={<Checkout />} />
-        <Route path="/orders/:id/tracking" element={<OrderTracking />} />
-        <Route
-          path="/categories/:category"
-          element={
-            <ProtectedRoute>
-              <CategoryProducts />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/farmer-dashboard" element={<ProtectedRoute roles={["farmer"]}><FarmerDashboard /></ProtectedRoute>} />
+        <Route path="/business-dashboard" element={<ProtectedRoute roles={["business"]}><BusinessDashboard /></ProtectedRoute>} />
+        <Route path="/admin-dashboard" element={<ProtectedRoute roles={["admin"]}><AdminDashboard /></ProtectedRoute>} />
+        <Route path="/add-product" element={<ProtectedRoute roles={["farmer"]}><AddProduct /></ProtectedRoute>} />
+        <Route path="/edit-product/:id" element={<ProtectedRoute roles={["farmer"]}><EditProduct /></ProtectedRoute>} />
+        <Route path="/checkout" element={<ProtectedRoute roles={["business"]}><Checkout /></ProtectedRoute>} />
+        <Route path="/orders/:id/tracking" element={<ProtectedRoute roles={["farmer", "business"]}><OrderTracking /></ProtectedRoute>} />
+        <Route path="/categories/:category" element={<CategoryProducts />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </LanguageProvider>
     </BrowserRouter>
