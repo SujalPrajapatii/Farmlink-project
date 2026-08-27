@@ -1,13 +1,8 @@
 import { api } from "../api";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import CancellationModal from "../components/CancellationModal";
 import { CATEGORY_IMAGES, getCategoryKey, getProductImage, handleImageError } from "../productImages";
-
-function hasSuccessfulOnlinePayment(order) {
-  const paymentStatus = String(order.paymentStatus || "").toUpperCase();
-  return order.paymentMethod === "ONLINE" && ["PAID", "SUCCESS"].includes(paymentStatus);
-}
+import { getTierPricing } from "../pricing";
 
 function BusinessDashboard() {
   const navigate = useNavigate();
@@ -19,20 +14,12 @@ function BusinessDashboard() {
   const accountType = currentUser?.accountType;
 
   const [products, setProducts] = useState([]);
-  const [orders, setOrders] = useState([]);
-  const [orderSummary, setOrderSummary] = useState({
-    totalOrders: 0,
-    completedOrders: 0,
-    completedTotal: 0,
-  });
   const [search, setSearch] = useState("");
   const [quantity, setQuantity] = useState({});
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [cart, setCart] = useState(() => JSON.parse(localStorage.getItem("farmlinkCart") || "[]"));
   const [notifications, setNotifications] = useState([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [cancellingOrderId, setCancellingOrderId] = useState(null);
-  const [isCancelling, setIsCancelling] = useState(false);
 
   function updateCart(nextCart) {
     setCart(nextCart);
@@ -61,21 +48,15 @@ function BusinessDashboard() {
 
     async function loadDashboardData() {
       try {
-        const [productsData, ordersData, summaryData, notificationsData] = await Promise.all([
+        const [productsData, notificationsData] = await Promise.all([
           api("/products"),
-          api("/orders/mine"),
-          api("/orders/summary"),
           api("/orders/notifications"),
         ]);
 
         if (!active) return;
-        setProducts(productsData);
-        setOrders(ordersData);
-        setOrderSummary(summaryData);
-        setNotifications(notificationsData);
+        setProducts(productsData || []);
+        setNotifications(notificationsData || []);
       } catch (error) {
-        // Do not repeatedly interrupt a buyer when a background refresh has a
-        // temporary network problem. The first load still explains the error.
         if (firstLoad && active) alert(error.message);
       } finally {
         firstLoad = false;
@@ -84,8 +65,6 @@ function BusinessDashboard() {
 
     loadDashboardData();
     window.addEventListener("focus", loadDashboardData);
-    // A farmer cancellation removes the order from this list. Refresh often
-    // enough that its notification appears promptly in the buyer dashboard.
     const refreshId = window.setInterval(loadDashboardData, 5000);
 
     return () => {
@@ -136,9 +115,6 @@ function BusinessDashboard() {
     }
   }
 
-  // const completedOrders = orders.filter((order) => order.status === "Delivered");
-  // const totalSpent = completedOrders.reduce((total, order) => total + Number(order.total), 0);
-
   function availableStockAfterOrder(product) {
     const stock = Number(product.quantity) || 0;
     const requestedQuantity = Number(quantity[product.id] || 1);
@@ -146,84 +122,19 @@ function BusinessDashboard() {
     return Math.max(stock - (Number.isFinite(requestedQuantity) ? requestedQuantity : 0), 0);
   }
 
- /* async function loadProducts() {
-    try {
-      const data = await api("/products");
-      setProducts(data);
-    } catch (error) {
-      alert(error.message);
-    }
-  }
-
-  async function loadOrders() {
-    try {
-      const data = await api("/orders/mine");
-      setOrders(data);
-    } catch (error) {
-      alert(error.message);
-    }
-  }*/
-
   function handleLogout() {
     localStorage.removeItem("farmlinkToken");
     localStorage.removeItem("farmlinkCurrentUser");
     navigate("/");
   }
 
-  async function cancelOrder({ reason, customReason }) {
-    try {
-      setIsCancelling(true);
-      const result = await api(`/orders/${cancellingOrderId}/cancel`, { method: "POST", body: JSON.stringify({ reason, customReason }) });
-      setOrders((currentOrders) =>
-        currentOrders.filter((order) => order.id !== cancellingOrderId)
-      );
-      alert(result.message);
-      setCancellingOrderId(null);
-      const productsData = await api("/products");
-      setProducts(productsData);
-    } catch (error) {
-      alert(error.message);
-    } finally {
-      setIsCancelling(false);
-    }
-  }
-
- /*async function placeOrder(product) {
-    const orderQuantity = Number(quantity[product.id] || 1);
-
-    if (
-      !Number.isInteger(orderQuantity) ||
-      orderQuantity < 1 ||
-      orderQuantity > Number(product.quantity)
-    ) {
-      alert(`Enter a whole quantity between 1 and ${product.quantity}.`);
-      return;
-    }
-
-    try {
-      await api("/orders", {
-        method: "POST",
-        body: JSON.stringify({
-          productId: product.id,
-          quantity: orderQuantity,
-        }),
-      });
-
-      alert("Order placed successfully!");
-      await Promise.all([loadProducts(), loadOrders()]);
-    } catch (error) {
-      alert(error.message);
-    }
-  }*/
-
   return (
     <div className="dashboard-page">
       <aside className="sidebar">
         <h2>🌱 FarmLink</h2>
         <Link to="/">Home</Link>
-        <Link to="/business-dashboard">Marketplace</Link>
-        <a href="#products">Available Products</a>
-        <a href="#orders">My Orders</a>
+        <Link to="/business-dashboard" style={{ background: "rgba(255,255,255,0.22)", color: "#fff", fontWeight: "800" }}>Marketplace</Link>
+        <Link to="/my-orders">My Orders</Link>
         <button className="sidebar-cart" onClick={() => navigate("/checkout", { state: { cart } })}>Cart ({cart.length})</button>
         <button className="sidebar-cart" onClick={() => setNotificationsOpen((isOpen) => !isOpen)}>
           Notifications{unreadNotificationCount ? ` (${unreadNotificationCount})` : ""}
@@ -264,17 +175,14 @@ function BusinessDashboard() {
           </section>
         )}
 
-
-        <section className="market-order-stats" aria-label="Order summary"><article><span>Total orders</span><strong>{orderSummary.totalOrders}</strong><small>Orders placed</small></article><article><span>Completed</span><strong>{orderSummary.completedOrders}</strong><small>Delivered successfully</small></article><article><span>Total spent</span><strong>₹{orderSummary.completedTotal.toLocaleString("en-IN")}</strong><small>Delivered orders only</small></article></section>
-
-        <section className="market-intro" id="products">
-          <div>
+        <section className="market-category-wrapper" id="products">
+          <div className="market-category-heading">
             <p className="section-tag">EXPLORE CATEGORIES</p>
             <h2>Fresh picks for your business.</h2>
             <p>Welcome back, {currentUser.name}. Explore farm produce by category or search below.</p>
           </div>
-          
-          <div className="category-grid market-category-cards" style={{ margin: "20px 0 25px" }}>
+
+          <div className="market-category-cards">
             {[
               { key: "vegetables", name: "Vegetables", image: CATEGORY_IMAGES.vegetables },
               { key: "fruits", name: "Fruits", image: CATEGORY_IMAGES.fruits },
@@ -283,45 +191,47 @@ function BusinessDashboard() {
             ].map((cat) => (
               <div
                 key={cat.key}
-                className={`category-card ${selectedCategory === cat.key ? "is-selected-card" : ""}`}
+                className={`category-card market-category-card ${selectedCategory === cat.key ? "is-selected-card" : ""}`}
                 style={{ cursor: "pointer" }}
                 onClick={() => setSelectedCategory(selectedCategory === cat.key ? "all" : cat.key)}
               >
                 <img src={cat.image} alt={cat.name} onError={(e) => handleImageError(e, cat.key)} />
                 <span>
                   {cat.name}
-                  <small>{selectedCategory === cat.key ? "✓ Filtered (Click to reset)" : "Explore produce →"}</small>
+                  <small>{selectedCategory === cat.key ? "✓ Active Filter" : "Explore →"}</small>
                 </span>
               </div>
             ))}
           </div>
 
-          <label className="market-search">
-            <span>⌕</span>
-            <input
-              type="search"
-              placeholder="Search crop, category, or location..."
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-          </label>
-
-          <div className="market-category-pills" aria-label="Product categories">
-            <button
-              className={selectedCategory === "all" ? "is-active" : ""}
-              onClick={() => setSelectedCategory("all")}
-            >
-              All produce
-            </button>
-            {["vegetables", "fruits", "grains", "pulses"].map((key) => (
+          <div className="market-toolbar">
+            <div className="market-category-pills" aria-label="Product categories">
               <button
-                key={key}
-                className={selectedCategory === key ? "is-active" : ""}
-                onClick={() => setSelectedCategory(key)}
+                className={selectedCategory === "all" ? "is-active" : ""}
+                onClick={() => setSelectedCategory("all")}
               >
-                {key[0].toUpperCase() + key.slice(1)}
+                All produce
               </button>
-            ))}
+              {["vegetables", "fruits", "grains", "pulses"].map((key) => (
+                <button
+                  key={key}
+                  className={selectedCategory === key ? "is-active" : ""}
+                  onClick={() => setSelectedCategory(key)}
+                >
+                  {key[0].toUpperCase() + key.slice(1)}
+                </button>
+              ))}
+            </div>
+
+            <label className="market-search">
+              <span>⌕</span>
+              <input
+                type="search"
+                placeholder="Search crop, category, or location..."
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </label>
           </div>
         </section>
 
@@ -336,111 +246,90 @@ function BusinessDashboard() {
             </div>
           ) : (
             <div className="product-grid">
-              {filteredProducts.map((product) => (
-                <article className="product-card market-product-card" key={product.id}>
-                  <img
-                    src={getProductImage(product)}
-                    alt={product.name}
-                    onError={(event) => handleImageError(event, product.category, product.name)}
-                  />
-                  <span className="market-product-category">{product.category}</span>
-                  <h3>{product.name}</h3>
-                  <strong>
-                    ₹{product.price} / {product.unit}
-                  </strong>
-                  <p className="muted-text">Grown by {product.ownerName} · {product.location}</p>
+              {filteredProducts.map((product) => {
+                const itemQty = Number(quantity[product.id] || 1);
+                const pricing = getTierPricing(product, itemQty);
+                return (
+                  <article className="product-card market-product-card" key={product.id}>
+                    <img
+                      src={getProductImage(product)}
+                      alt={product.name}
+                      onError={(event) => handleImageError(event, product.category, product.name)}
+                    />
+                    <span className="market-product-category">{product.category}</span>
+                    <h3>{product.name}</h3>
 
-                  <label className="quantity-label">Order Quantity</label>
-                  <input
-                    className="quantity-input"
-                    type="number"
-                    min="1"
-                    step="1"
-                    max={product.quantity}
-                    value={quantity[product.id] || 1}
-                    onChange={(event) =>
-                      setQuantity({
-                        ...quantity,
-                        [product.id]: event.target.value,
-                      })
-                    }
-                  />
-                  <p className="available-stock">
-                    Available stock after this order: {availableStockAfterOrder(product).toLocaleString("en-IN", { maximumFractionDigits: 2 })} {product.unit}
-                  </p>
+                    <div style={{ margin: "4px 0" }}>
+                      {pricing.isDiscounted ? (
+                        <div>
+                          <strong style={{ color: "#15803d" }}>
+                            ₹{pricing.discountedUnitPrice.toFixed(2)} / {pricing.unit}
+                          </strong>{" "}
+                          <span style={{ textDecoration: "line-through", fontSize: "12px", color: "#94a3b8" }}>
+                            ₹{product.price}
+                          </span>{" "}
+                          <span style={{ background: "#dcfce7", color: "#166534", padding: "2px 6px", borderRadius: "999px", fontSize: "10px", fontWeight: 700 }}>
+                            🏷️ {pricing.tierBadge}
+                          </span>
+                        </div>
+                      ) : (
+                        <strong>₹{product.price} / {product.unit}</strong>
+                      )}
+                    </div>
 
-<button
-  className="register-btn full-width"
-  onClick={() =>
-    navigate("/checkout", {
-      state: {
-        product,
-        quantity: Number(quantity[product.id] || 1),
-      },
-    })
-  }
->
-  Buy Now
-</button>
-<button className="login-btn full-width cart-button" onClick={() => addToCart(product)}>Add to Cart</button>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
+                    <div style={{ fontSize: "11px", background: "#f0fdf4", color: "#166534", padding: "4px 7px", borderRadius: "6px", margin: "4px 0 8px", border: "1px solid #bbf7d0" }}>
+                      🏷️ <strong>Bulk Deals:</strong> {pricing.tier1Pct}% off ({pricing.tier1Min}+ {pricing.unit}) · {pricing.tier2Pct}% off ({pricing.tier2Min}+ {pricing.unit})
+                    </div>
 
-        <section className="product-section market-orders" id="orders">
-          <h2>My Orders</h2>
+                    <p className="muted-text">Grown by {product.ownerName} · {product.location}</p>
 
-          {orders.length === 0 ? (
-            <p className="muted-text">You have not placed any orders yet.</p>
-          ) : (
-            <div className="order-list">
-              {orders.map((order) => (
-                <article className="order-card" key={order.id}>
-                  <img
-                    className="order-product-image"
-                    src={getProductImage(order.productCategory, order.productName)}
-                    alt={order.productCategory || "Produce"}
-                    onError={(event) => handleImageError(event, order.productCategory, order.productName)}
-                  />
-                  <div className="order-product-details">
-                    <h3>{order.productName}</h3>
-                    <p>
-                      Farmer: {order.farmerName} · Quantity: {order.quantity}
-                    </p>
-                    <p>
-                      Order Date:{" "}
-                      {new Date(order.createdAt).toLocaleDateString()}
-                    </p>
-                  </div>
+                    <label className="quantity-label">Order Quantity ({pricing.unit})</label>
+                    <input
+                      className="quantity-input"
+                      type="number"
+                      min="1"
+                      step="1"
+                      max={product.quantity}
+                      value={quantity[product.id] || 1}
+                      onChange={(event) =>
+                        setQuantity({
+                          ...quantity,
+                          [product.id]: event.target.value,
+                        })
+                      }
+                    />
 
-                  <div className="order-right">
-                    <strong>₹{order.total}</strong>
-                    <span
-                      className={`status status-${order.status.toLowerCase().replaceAll(" ", "-")}`}
-                    >
-                      {order.status}
-                    </span>
-                    <Link
-                      className="login-btn"
-                      to={`/orders/${order.id}/tracking`}
-                    >
-                      Track Order
-                    </Link>
-                    {hasSuccessfulOnlinePayment(order) ? (
-                      <p className="paid-order-cancellation-notice">This order has been paid online and cannot be cancelled.</p>
-                    ) : ["Awaiting Payment", "Pending", "Accepted"].includes(order.status) && (
-                      <button className="cancel-btn" onClick={() => setCancellingOrderId(order.id)}>Cancel Order</button>
+                    {pricing.isDiscounted && (
+                      <p style={{ margin: "2px 0 6px", fontSize: "12px", color: "#16a34a", fontWeight: 700 }}>
+                        ✨ Tier Applied: Total ₹{pricing.total.toFixed(2)} (Save ₹{pricing.savings.toFixed(2)})
+                      </p>
                     )}
-                  </div>
-                </article>
-              ))}
+
+                    <p className="available-stock">
+                      Available stock after this order: {availableStockAfterOrder(product).toLocaleString("en-IN", { maximumFractionDigits: 2 })} {product.unit}
+                    </p>
+
+                    <button
+                      className="register-btn full-width"
+                      onClick={() =>
+                        navigate("/checkout", {
+                          state: {
+                            product,
+                            quantity: Number(quantity[product.id] || 1),
+                          },
+                        })
+                      }
+                    >
+                      Buy Now {pricing.isDiscounted ? `(₹${pricing.total.toFixed(2)})` : ""}
+                    </button>
+                    <button className="login-btn full-width cart-button" onClick={() => addToCart(product)}>Add to Cart</button>
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>
       </main>
-      {cancellingOrderId && <CancellationModal role="buyer" orderId={cancellingOrderId} onClose={() => setCancellingOrderId(null)} onConfirm={cancelOrder} submitting={isCancelling} />}
     </div>
   );
 }

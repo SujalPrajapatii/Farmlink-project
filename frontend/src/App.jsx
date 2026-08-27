@@ -10,6 +10,8 @@ import EditProduct from "./pages/EditProduct";
 import Checkout from "./pages/Checkout";
 import OrderTracking from "./pages/OrderTracking";
 import CategoryProducts from "./pages/CategoryProducts";
+import BuyerOrders from "./pages/BuyerOrders";
+import FarmerOrders from "./pages/FarmerOrders";
 import { LanguageProvider, LanguageSelector, PageTranslator } from "./LanguageContext";
 
 function ProtectedRoute({ children, roles }) {
@@ -44,7 +46,10 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/farmer-dashboard" element={<ProtectedRoute roles={["farmer"]}><FarmerDashboard /></ProtectedRoute>} />
+        <Route path="/farmer-orders" element={<ProtectedRoute roles={["farmer"]}><FarmerOrders /></ProtectedRoute>} />
         <Route path="/business-dashboard" element={<ProtectedRoute roles={["business"]}><BusinessDashboard /></ProtectedRoute>} />
+        <Route path="/my-orders" element={<ProtectedRoute roles={["business"]}><BuyerOrders /></ProtectedRoute>} />
+        <Route path="/buyer-orders" element={<ProtectedRoute roles={["business"]}><BuyerOrders /></ProtectedRoute>} />
         <Route path="/admin-dashboard" element={<ProtectedRoute roles={["admin"]}><AdminDashboard /></ProtectedRoute>} />
         <Route path="/add-product" element={<ProtectedRoute roles={["farmer"]}><AddProduct /></ProtectedRoute>} />
         <Route path="/edit-product/:id" element={<ProtectedRoute roles={["farmer"]}><EditProduct /></ProtectedRoute>} />

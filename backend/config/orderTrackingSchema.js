@@ -42,6 +42,20 @@ export async function ensureOrderTrackingSchema() {
     );
   }
 
+  const [otpColumn] = await pool.execute(
+    `SELECT 1
+     FROM information_schema.columns
+     WHERE table_schema = DATABASE()
+       AND table_name = 'orders'
+       AND column_name = 'delivery_otp'`
+  );
+
+  if (otpColumn.length === 0) {
+    await pool.execute(
+      "ALTER TABLE orders ADD COLUMN delivery_otp VARCHAR(10) NULL"
+    );
+  }
+
   const cancellationColumns = [
     ["cancelled_by_user_id", "BIGINT UNSIGNED NULL"],
     ["cancelled_by_role", "VARCHAR(20) NULL"],
@@ -105,4 +119,48 @@ export async function ensureOrderTrackingSchema() {
   if (notificationEventIndex.length === 0) {
     await pool.execute("CREATE UNIQUE INDEX uniq_order_notification_event ON order_notifications (user_id, order_id, type)");
   }
+
+  // Wholesale Bulk Tiered Pricing schema for products:
+  const productTierColumns = [
+    ["tier1_min_qty", "INT NOT NULL DEFAULT 51"],
+    ["tier1_discount_pct", "INT NOT NULL DEFAULT 10"],
+    ["tier2_min_qty", "INT NOT NULL DEFAULT 201"],
+    ["tier2_discount_pct", "INT NOT NULL DEFAULT 20"],
+  ];
+  for (const [column, definition] of productTierColumns) {
+    const [existing] = await pool.execute(
+      `SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'products' AND column_name = ?`,
+      [column]
+    );
+    if (existing.length === 0) {
+      await pool.execute(`ALTER TABLE products ADD COLUMN ${column} ${definition}`);
+    }
+  }
+
+  // Backfill existing products so all currently added products get the default discount tiers if null/0
+  await pool.execute(`
+    UPDATE products
+    SET
+      tier1_min_qty = IF(tier1_min_qty IS NULL OR tier1_min_qty = 0, 51, tier1_min_qty),
+      tier1_discount_pct = IF(tier1_discount_pct IS NULL OR tier1_discount_pct = 0, 10, tier1_discount_pct),
+      tier2_min_qty = IF(tier2_min_qty IS NULL OR tier2_min_qty = 0, 201, tier2_min_qty),
+      tier2_discount_pct = IF(tier2_discount_pct IS NULL OR tier2_discount_pct = 0, 20, tier2_discount_pct)
+  `);
+
+  // Wholesale discount details on orders:
+  const orderDiscountColumns = [
+    ["discount_amount", "DECIMAL(10, 2) NOT NULL DEFAULT 0.00"],
+    ["discount_pct", "INT NOT NULL DEFAULT 0"],
+    ["original_total", "DECIMAL(10, 2) NULL"],
+  ];
+  for (const [column, definition] of orderDiscountColumns) {
+    const [existing] = await pool.execute(
+      `SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'orders' AND column_name = ?`,
+      [column]
+    );
+    if (existing.length === 0) {
+      await pool.execute(`ALTER TABLE orders ADD COLUMN ${column} ${definition}`);
+    }
+  }
 }
+

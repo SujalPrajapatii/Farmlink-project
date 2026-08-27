@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import { CATEGORY_IMAGES, getCategoryKey, getProductImage, handleImageError } from "../productImages";
+import { getTierPricing } from "../pricing";
 
 const categoryNames = {
   vegetables: "Vegetables",
@@ -212,6 +213,7 @@ function CategoryProducts() {
               const stock = Number(product.quantity) || 0;
               const reqQty = Number(quantity[product.id] || 1);
               const remainingStock = Math.max(stock - (Number.isFinite(reqQty) ? reqQty : 0), 0);
+              const pricing = getTierPricing(product, reqQty);
 
               return (
                 <article className="product-card market-product-card" key={product.id}>
@@ -222,12 +224,32 @@ function CategoryProducts() {
                   />
                   <span className="market-product-category">{product.category}</span>
                   <h3>{product.name}</h3>
-                  <strong>
-                    ₹{product.price} / {product.unit}
-                  </strong>
+
+                  <div style={{ margin: "4px 0" }}>
+                    {pricing.isDiscounted ? (
+                      <div>
+                        <strong style={{ color: "#15803d" }}>
+                          ₹{pricing.discountedUnitPrice.toFixed(2)} / {pricing.unit}
+                        </strong>{" "}
+                        <span style={{ textDecoration: "line-through", fontSize: "12px", color: "#94a3b8" }}>
+                          ₹{product.price}
+                        </span>{" "}
+                        <span style={{ background: "#dcfce7", color: "#166534", padding: "2px 6px", borderRadius: "999px", fontSize: "10px", fontWeight: 700 }}>
+                          🏷️ {pricing.tierBadge}
+                        </span>
+                      </div>
+                    ) : (
+                      <strong>₹{product.price} / {product.unit}</strong>
+                    )}
+                  </div>
+
+                  <div style={{ fontSize: "11px", background: "#f0fdf4", color: "#166534", padding: "4px 7px", borderRadius: "6px", margin: "4px 0 8px", border: "1px solid #bbf7d0" }}>
+                    🏷️ <strong>Bulk Deals:</strong> {pricing.tier1Pct}% off ({pricing.tier1Min}+ {pricing.unit}) · {pricing.tier2Pct}% off ({pricing.tier2Min}+ {pricing.unit})
+                  </div>
+
                   <p className="muted-text">Grown by {product.ownerName || "Local Farmer"} · {product.location}</p>
 
-                  <label className="quantity-label">Order Quantity</label>
+                  <label className="quantity-label">Order Quantity ({pricing.unit})</label>
                   <input
                     className="quantity-input"
                     type="number"
@@ -242,6 +264,13 @@ function CategoryProducts() {
                       })
                     }
                   />
+
+                  {pricing.isDiscounted && (
+                    <p style={{ margin: "2px 0 6px", fontSize: "12px", color: "#16a34a", fontWeight: 700 }}>
+                      ✨ Tier Applied: Total ₹{pricing.total.toFixed(2)} (Save ₹{pricing.savings.toFixed(2)})
+                    </p>
+                  )}
+
                   <p className="available-stock">
                     Available stock after this order: {remainingStock.toLocaleString("en-IN", { maximumFractionDigits: 2 })} {product.unit}
                   </p>
@@ -250,7 +279,7 @@ function CategoryProducts() {
                     className="register-btn full-width"
                     onClick={() => handleBuyNow(product)}
                   >
-                    Buy Now
+                    Buy Now {pricing.isDiscounted ? `(₹${pricing.total.toFixed(2)})` : ""}
                   </button>
                   <button
                     className="login-btn full-width cart-button"

@@ -26,6 +26,10 @@ export const createProduct = async (req, res) => {
       price,
       location,
       image,
+      tier1MinQty = 51,
+      tier1DiscountPct = 10,
+      tier2MinQty = 201,
+      tier2DiscountPct = 20,
     } = req.body;
 
     // Check all required text fields.
@@ -60,8 +64,8 @@ export const createProduct = async (req, res) => {
 
     const [result] = await pool.execute(
       `INSERT INTO products
-      (farmer_id, name, category, quantity, unit, price, location, image_url)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      (farmer_id, name, category, quantity, unit, price, location, image_url, tier1_min_qty, tier1_discount_pct, tier2_min_qty, tier2_discount_pct)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         farmerId,
         name.trim(),
@@ -71,6 +75,10 @@ export const createProduct = async (req, res) => {
         Number(price),
         location.trim(),
         isNonEmptyString(image) ? image.trim() : null,
+        Number(tier1MinQty) || 51,
+        Number(tier1DiscountPct) || 10,
+        Number(tier2MinQty) || 201,
+        Number(tier2DiscountPct) || 20,
       ]
     );
 
@@ -100,6 +108,10 @@ export const getAllProducts = async (req, res) => {
         p.price,
         p.location,
         p.image_url AS image,
+        COALESCE(p.tier1_min_qty, 51) AS tier1MinQty,
+        COALESCE(p.tier1_discount_pct, 10) AS tier1DiscountPct,
+        COALESCE(p.tier2_min_qty, 201) AS tier2MinQty,
+        COALESCE(p.tier2_discount_pct, 20) AS tier2DiscountPct,
         p.created_at AS createdAt,
         u.name AS ownerName
       FROM products p
@@ -133,6 +145,10 @@ export const getMyProducts = async (req, res) => {
         price,
         location,
         image_url AS image,
+        COALESCE(tier1_min_qty, 51) AS tier1MinQty,
+        COALESCE(tier1_discount_pct, 10) AS tier1DiscountPct,
+        COALESCE(tier2_min_qty, 201) AS tier2MinQty,
+        COALESCE(tier2_discount_pct, 20) AS tier2DiscountPct,
         created_at AS createdAt
       FROM products
       WHERE farmer_id = ?
@@ -163,6 +179,10 @@ export const updateProduct = async (req, res) => {
       price,
       location,
       image,
+      tier1MinQty = 51,
+      tier1DiscountPct = 10,
+      tier2MinQty = 201,
+      tier2DiscountPct = 20,
     } = req.body;
 
     if (!Number.isInteger(productId) || productId <= 0) {
@@ -206,7 +226,11 @@ export const updateProduct = async (req, res) => {
         unit = ?,
         price = ?,
         location = ?,
-        image_url = ?
+        image_url = ?,
+        tier1_min_qty = ?,
+        tier1_discount_pct = ?,
+        tier2_min_qty = ?,
+        tier2_discount_pct = ?
       WHERE id = ? AND farmer_id = ?`,
       [
         name.trim(),
@@ -216,6 +240,10 @@ export const updateProduct = async (req, res) => {
         Number(price),
         location.trim(),
         isNonEmptyString(image) ? image.trim() : null,
+        Number(tier1MinQty) || 51,
+        Number(tier1DiscountPct) || 10,
+        Number(tier2MinQty) || 201,
+        Number(tier2DiscountPct) || 20,
         productId,
         farmerId,
       ]

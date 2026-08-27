@@ -1,13 +1,7 @@
 import { api } from "../api";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import CancellationModal from "../components/CancellationModal";
 import { getProductImage, handleImageError } from "../productImages";
-
-function hasSuccessfulOnlinePayment(order) {
-  const paymentStatus = String(order.paymentStatus || "").toUpperCase();
-  return order.paymentMethod === "ONLINE" && ["PAID", "SUCCESS"].includes(paymentStatus);
-}
 
 function FarmerDashboard() {
   const navigate = useNavigate();
@@ -22,10 +16,6 @@ function FarmerDashboard() {
   const [orders, setOrders] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [cancellingOrderId, setCancellingOrderId] = useState(null);
-  const [isCancelling, setIsCancelling] = useState(false);
-  const locationWatchRef = useRef(null);
-  const lastLocationSentRef = useRef(0);
 
   useEffect(() => {
     if (accountType !== "farmer") return;
@@ -42,9 +32,9 @@ function FarmerDashboard() {
         ]);
 
         if (!active) return;
-        setProducts(productsData);
-        setOrders(ordersData);
-        setNotifications(notificationsData);
+        setProducts(productsData || []);
+        setOrders(ordersData || []);
+        setNotifications(notificationsData || []);
       } catch (error) {
         if (firstLoad && active) alert(error.message);
       } finally {
@@ -54,8 +44,6 @@ function FarmerDashboard() {
 
     loadDashboardData();
     window.addEventListener("focus", loadDashboardData);
-    // Poll frequently enough for a buyer cancellation to appear promptly while
-    // still using the existing authenticated dashboard API.
     const refreshId = window.setInterval(loadDashboardData, 5000);
 
     return () => {
@@ -111,16 +99,7 @@ function FarmerDashboard() {
   async function loadProducts() {
     try {
       const data = await api("/products/mine");
-      setProducts(data);
-    } catch (error) {
-      alert(error.message);
-    }
-  }
-
-  async function loadOrders() {
-    try {
-      const data = await api("/orders/mine");
-      setOrders(data);
+      setProducts(data || []);
     } catch (error) {
       alert(error.message);
     }
@@ -151,127 +130,17 @@ function FarmerDashboard() {
     }
   }
 
-  async function updateOrderStatus(orderId, status) {
-    try {
-      await api(`/orders/${orderId}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({ status }),
-      });
-
-      if (status === "Delivered") stopLiveTracking();
-
-      alert("Order updated successfully.");
-      await Promise.all([loadOrders(), loadProducts()]);
-      return true;
-    } catch (error) {
-      alert(error.message);
-      return false;
-    }
-  }
-
-  function stopLiveTracking() {
-    if (locationWatchRef.current !== null) {
-      navigator.geolocation?.clearWatch(locationWatchRef.current);
-      locationWatchRef.current = null;
-    }
-    lastLocationSentRef.current = 0;
-  }
-
-  async function sendDeliveryLocation(orderId, position, showConfirmation = false) {
-    await api(`/orders/${orderId}/location`, {
-      method: "POST",
-      body: JSON.stringify({
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-        note: "Farmer is currently delivering your order.",
-      }),
-    });
-
-    if (showConfirmation) alert("Your current delivery location was shared with the buyer.");
-  }
-
-  function startLiveTracking(orderId) {
-    if (!navigator.geolocation) {
-      alert("Your browser does not support live location sharing.");
-      return;
-    }
-
-    stopLiveTracking();
-    lastLocationSentRef.current = 0;
-    locationWatchRef.current = navigator.geolocation.watchPosition(
-      async (position) => {
-        // Save the initial position immediately, then refresh it at most once
-        // every 25 seconds while the farmer travels.
-        if (Date.now() - lastLocationSentRef.current < 25000) return;
-        lastLocationSentRef.current = Date.now();
-        try {
-          await sendDeliveryLocation(orderId, position);
-        } catch (error) {
-          console.error("Could not update live delivery location:", error);
-        }
-      },
-      () => alert("Allow location permission to automatically share the delivery route with the buyer."),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-    );
-  }
-
-  async function startDelivery(orderId) {
-    const started = await updateOrderStatus(orderId, "Out for Delivery");
-    if (started) startLiveTracking(orderId);
-  }
-
-  async function cancelOrder({ reason, customReason }) {
-    try {
-      setIsCancelling(true);
-      const result = await api(`/orders/${cancellingOrderId}/cancel`, { method: "POST", body: JSON.stringify({ reason, customReason }) });
-      setOrders((currentOrders) =>
-        currentOrders.filter((order) => order.id !== cancellingOrderId)
-      );
-      alert(result.message);
-      setCancellingOrderId(null);
-      await loadProducts();
-    } catch (error) {
-      alert(error.message);
-    } finally {
-      setIsCancelling(false);
-    }
-  }
-
-  async function shareCurrentLocation(orderId) {
-  if (!navigator.geolocation) {
-    alert("Your browser does not support location sharing.");
-    return;
-  }
-
-  navigator.geolocation.getCurrentPosition(
-    async (position) => {
-      try {
-        await sendDeliveryLocation(orderId, position, true);
-      } catch (error) {
-        alert(error.message);
-      }
-    },
-    () => {
-      alert(
-        "Location permission was denied. Please allow location access and try again."
-      );
-    },
-    {
-      enableHighAccuracy: true,
-      timeout: 15000,
-      maximumAge: 0,
-    }
-  );
-}
-
   return (
     <div className="dashboard-page">
       <aside className="sidebar">
         <h2>🌱 FarmLink</h2>
         <Link to="/">Home</Link>
-        <Link to="/farmer-dashboard">Dashboard</Link>
-        <a href="#products">My Products</a>
-        <a href="#orders">Orders</a>
+        <Link to="/farmer-dashboard" style={{ background: "rgba(255,255,255,0.22)", color: "#fff", fontWeight: "800" }}>My Products</Link>
+        <Link to="/farmer-orders">Orders Received {orders.length > 0 && `(${orders.length})`}</Link>
+        <Link to="/add-product" className="register-btn" style={{ padding: "8px 14px", textDecoration: "none" }}>+ Add Product</Link>
+        <button className="sidebar-cart" onClick={() => setNotificationsOpen((isOpen) => !isOpen)}>
+          🔔 Notifications{unreadNotificationCount ? ` (${unreadNotificationCount})` : ""}
+        </button>
 
         <button className="sidebar-logout" onClick={handleLogout}>
           Logout
@@ -283,21 +152,13 @@ function FarmerDashboard() {
           <div>
             <p className="section-tag">FARMER DASHBOARD</p>
             <h1>Welcome, {currentUser.name}!</h1>
-            <p>Manage your product listings and buyer orders.</p>
+            <p>Manage your product listings and view your buyer orders.</p>
           </div>
 
           <div className="dashboard-header-actions">
-            <button
-              className="notification-button"
-              type="button"
-              onClick={() => setNotificationsOpen((isOpen) => !isOpen)}
-              aria-expanded={notificationsOpen}
-              aria-controls="farmer-notifications"
-            >
-              <span aria-hidden="true">🔔</span>
-              <span className="sr-only">Notifications</span>
-              {unreadNotificationCount > 0 && <span className="notification-badge">{unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}</span>}
-            </button>
+            <Link className="farmer-btn" to="/farmer-orders" style={{ textDecoration: "none" }}>
+              📦 View Orders ({orders.length})
+            </Link>
             <Link className="register-btn" to="/add-product">
               + Add Product
             </Link>
@@ -305,28 +166,28 @@ function FarmerDashboard() {
         </div>
 
         <section className="dashboard-stats farmer-stats">
-          <div className="dashboard-stat-card">
+          <Link to="/farmer-orders" className="dashboard-stat-card" style={{ textDecoration: "none" }}>
             <p>Total Orders</p>
             <h2>{orders.length}</h2>
-          </div>
+          </Link>
           <div className="dashboard-stat-card">
             <p>Active Products</p>
             <h2>{products.length}</h2>
           </div>
 
-          <div className="dashboard-stat-card">
+          <Link to="/farmer-orders" className="dashboard-stat-card" style={{ textDecoration: "none" }}>
             <p>Orders to Ship</p>
             <h2>{ordersToShip.length}</h2>
-          </div>
+          </Link>
 
-          <div className="dashboard-stat-card">
+          <Link to="/farmer-orders" className="dashboard-stat-card" style={{ textDecoration: "none" }}>
             <p>Completed Orders</p>
             <h2>{completedOrders.length}</h2>
-          </div>
+          </Link>
 
           <div className="dashboard-stat-card">
             <p>Total Income</p>
-            <h2>₹{totalSales}</h2>
+            <h2>₹{totalSales.toLocaleString("en-IN")}</h2>
           </div>
         </section>
 
@@ -414,101 +275,7 @@ function FarmerDashboard() {
             </div>
           )}
         </section>
-
-        <section className="product-section" id="orders">
-          <h2>Orders Received</h2>
-
-          {orders.length === 0 ? (
-            <p className="muted-text">You have not received any orders yet.</p>
-          ) : (
-            <div className="order-list">
-              {orders.map((order) => (
-                <article className="order-card" key={order.id}>
-                  <img
-                    className="order-product-image"
-                    src={getProductImage(order.productCategory, order.productName)}
-                    alt={order.productCategory || "Produce"}
-                    onError={(event) => handleImageError(event, order.productCategory, order.productName)}
-                  />
-                  <div className="order-product-details">
-                    <h3>{order.productName}</h3>
-                    <p>
-                      Buyer: {order.businessName} · Quantity: {order.quantity}
-                    </p>
-                    <p>
-                      Order Date:{" "}
-                      {new Date(order.createdAt).toLocaleDateString()}
-                    </p>
-                  </div>
-
-                  <div className="order-right">
-                    <strong>₹{order.total}</strong>
-                    <span
-                      className={`status status-${order.status.toLowerCase().replaceAll(" ", "-")}`}
-                    >
-                      {order.status}
-                    </span>
-
-                    <Link
-                      className="login-btn"
-                      to={`/orders/${order.id}/tracking`}
-                    >
-                      View Tracking
-                    </Link>
-
-                    {hasSuccessfulOnlinePayment(order) ? (
-                      <p className="paid-order-cancellation-notice">This order has been paid online and cannot be cancelled.</p>
-                    ) : order.status === "Pending" && (
-                      <div className="order-actions">
-                        <button
-                          className="cancel-btn"
-                          onClick={() => setCancellingOrderId(order.id)}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-
-                    {order.status === "Accepted" && (
-                      <div className="order-actions">
-                        <button className="accept-btn" onClick={() => startDelivery(order.id)}>
-                          Start Delivery
-                        </button>
-                        {!hasSuccessfulOnlinePayment(order) && (
-                          <button className="cancel-btn" onClick={() => setCancellingOrderId(order.id)}>
-                            Cancel Order
-                          </button>
-                        )}
-                      </div>
-                    )}
-
-{order.status === "Out for Delivery" && (
-  <div className="order-actions">
-    <button
-      className="accept-btn"
-      onClick={() => shareCurrentLocation(order.id)}
-    >
-      Update Location Now
-    </button>
-
-    <button
-      className="deliver-btn"
-      onClick={() =>
-        updateOrderStatus(order.id, "Delivered")
-      }
-    >
-      Mark Delivered
-    </button>
-  </div>
-)}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
       </main>
-      {cancellingOrderId && <CancellationModal role="seller" orderId={cancellingOrderId} onClose={() => setCancellingOrderId(null)} onConfirm={cancelOrder} submitting={isCancelling} />}
     </div>
   );
 }

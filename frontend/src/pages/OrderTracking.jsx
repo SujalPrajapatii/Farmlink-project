@@ -22,14 +22,15 @@ function OrderTracking() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [copiedOtp, setCopiedOtp] = useState(false);
 
   const currentUser = JSON.parse(
     localStorage.getItem("farmlinkCurrentUser") || "null"
   );
   const dashboardPath =
     currentUser?.accountType === "farmer"
-      ? "/farmer-dashboard"
-      : "/business-dashboard";
+      ? "/farmer-orders"
+      : "/my-orders";
 
   const loadTracking = useCallback(async (isManualRefresh = false) => {
     try {
@@ -108,6 +109,14 @@ function OrderTracking() {
           ? "Waiting for payment"
           : "Your order is being prepared";
 
+  const handleCopyOtp = () => {
+    if (order.deliveryOtp) {
+      navigator.clipboard?.writeText(String(order.deliveryOtp));
+      setCopiedOtp(true);
+      setTimeout(() => setCopiedOtp(false), 2500);
+    }
+  };
+
   return (
     <main className="tracking-page">
       <section className="tracking-shell">
@@ -152,6 +161,38 @@ function OrderTracking() {
 
         {deliveryState.cancelled && (
           <div className="tracking-notice tracking-notice-warning">This order has been cancelled. Contact the farmer if you need help.</div>
+        )}
+
+        {order.deliveryOtp && order.status === "Out for Delivery" && (
+          <section className="delivery-otp-banner" aria-label="Delivery Confirmation OTP">
+            <div className="otp-banner-glow" />
+            <div className="otp-banner-content">
+              <div className="otp-banner-header">
+                <span className="otp-shield-badge">🔐 Delivery Confirmation OTP</span>
+                <span className="otp-status-pill">Ready for Delivery</span>
+              </div>
+              <p className="otp-banner-title">
+                Share this 4-digit secret OTP with the farmer/delivery partner to successfully confirm and complete your delivery.
+              </p>
+              <div className="otp-display-row">
+                <div className="otp-code-boxes" aria-label={`OTP: ${order.deliveryOtp}`}>
+                  {String(order.deliveryOtp).split("").map((digit, idx) => (
+                    <span className="otp-code-box" key={idx}>{digit}</span>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="otp-copy-btn"
+                  onClick={handleCopyOtp}
+                >
+                  {copiedOtp ? "✓ Copied" : "📋 Copy OTP"}
+                </button>
+              </div>
+              <p className="otp-security-note">
+                🛡️ <strong>Important:</strong> The farmer cannot mark the order as delivered without entering this code. Only share it after you receive and inspect your produce.
+              </p>
+            </div>
+          </section>
         )}
 
         <div className="tracking-grid">

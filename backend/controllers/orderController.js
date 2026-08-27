@@ -3,12 +3,39 @@ import pool from "../config/db.js";
 const isGujarat = (state) =>
   typeof state === "string" && state.trim().toLowerCase() === "gujarat";
 
+// Helper function to calculate wholesale bulk tiered price:
+export const calculateTierPricing = (basePrice, quantity, product = {}) => {
+  const qty = Number(quantity) || 1;
+  const price = Number(basePrice) || 0;
+  const tier1Min = Number(product.tier1_min_qty ?? product.tier1MinQty ?? 51);
+  const tier1Pct = Number(product.tier1_discount_pct ?? product.tier1DiscountPct ?? 10);
+  const tier2Min = Number(product.tier2_min_qty ?? product.tier2MinQty ?? 201);
+  const tier2Pct = Number(product.tier2_discount_pct ?? product.tier2DiscountPct ?? 20);
+
+  let discountPct = 0;
+  if (qty >= tier2Min && tier2Pct > 0) {
+    discountPct = tier2Pct;
+  } else if (qty >= tier1Min && tier1Pct > 0) {
+    discountPct = tier1Pct;
+  }
+
+  const originalTotal = price * qty;
+  const discountedUnitPrice = price * (1 - discountPct / 100);
+  const total = originalTotal * (1 - discountPct / 100);
+  const discountAmount = originalTotal - total;
+
+  return {
+    basePrice: price,
+    quantity: qty,
+    discountPct,
+    discountAmount: Math.round(discountAmount * 100) / 100,
+    unitPrice: Math.round(discountedUnitPrice * 100) / 100,
+    originalTotal: Math.round(originalTotal * 100) / 100,
+    total: Math.round(total * 100) / 100,
+  };
+};
+
 // Business buyer creates an order.
-// The buyer must select:
-// 1. A product
-// 2. Quantity
-// 3. Saved delivery address
-// 4. Payment method: COD or ONLINE
 export const placeOrder = async (req, res) => {
   let connection;
   let transactionStarted = false;
@@ -26,12 +53,7 @@ export const placeOrder = async (req, res) => {
       });
     }
 
-    // Valid examples: 1, 2, 10
-    // Invalid examples: 0, -1, 1.5, "hello"
-    if (
-      !Number.isInteger(requestedQuantity) ||
-      requestedQuantity <= 0
-    ) {
+    if (!Number.isInteger(requestedQuantity) || requestedQuantity <= 0) {
       return res.status(400).json({
         message: "Quantity must be a positive whole number.",
       });
@@ -44,25 +66,30 @@ export const placeOrder = async (req, res) => {
       });
     }
 
-    // COD = Cash on Delivery / offline payment.
-    // ONLINE = Razorpay or another online payment gateway.
     if (!["COD", "ONLINE"].includes(paymentMethod)) {
       return res.status(400).json({
         message: "Payment method must be COD or ONLINE.",
       });
     }
 
-    // Comes from JWT token, so buyer cannot create an order for another user.
     const businessId = req.user.id;
 
     connection = await pool.getConnection();
     await connection.beginTransaction();
     transactionStarted = true;
 
-    // Lock the product row while ordering.
-    // This prevents two buyers from purchasing the same stock at once.
+    // Lock the product row and fetch tier discount info
     const [products] = await connection.execute(
-      `SELECT id, farmer_id, quantity, price
+      `SELECT
+        id,
+        farmer_id,
+        quantity,
+        price,
+        unit,
+        COALESCE(tier1_min_qty, 51) AS tier1_min_qty,
+        COALESCE(tier1_discount_pct, 10) AS tier1_discount_pct,
+        COALESCE(tier2_min_qty, 201) AS tier2_min_qty,
+        COALESCE(tier2_discount_pct, 20) AS tier2_discount_pct
        FROM products
        WHERE id = ?
        FOR UPDATE`,
@@ -136,19 +163,15 @@ export const placeOrder = async (req, res) => {
       .filter(Boolean)
       .join(", ");
 
-    // The server calculates price. The frontend must never send total price.
-    const total = Number(product.price) * requestedQuantity;
+    // Calculate wholesale bulk tiered price:
+    const pricing = calculateTierPricing(product.price, requestedQuantity, product);
 
-    // Stock is reserved in this transaction, so COD orders are immediately
-    // accepted. The farmer only needs to arrange delivery.
-    // ONLINE orders wait until the payment gateway confirms the payment.
     const initialStatus =
       paymentMethod === "ONLINE" ? "Awaiting Payment" : "Accepted";
 
-    const initialPaymentStatus =
-      paymentMethod === "ONLINE" ? "PENDING" : "PENDING";
+    const initialPaymentStatus = "PENDING";
 
-    // Create the order and store a snapshot of the delivery details.
+    // Create the order with wholesale discount tracking:
     const [result] = await connection.execute(
       `INSERT INTO orders
       (
@@ -158,6 +181,9 @@ export const placeOrder = async (req, res) => {
         quantity,
         unit_price,
         total,
+        discount_amount,
+        discount_pct,
+        original_total,
         status,
         delivery_address_id,
         delivery_name,
@@ -166,14 +192,17 @@ export const placeOrder = async (req, res) => {
         payment_method,
         payment_status
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         productId,
         businessId,
         product.farmer_id,
         requestedQuantity,
-        product.price,
-        total,
+        pricing.unitPrice,
+        pricing.total,
+        pricing.discountAmount,
+        pricing.discountPct,
+        pricing.originalTotal,
         initialStatus,
         address.id,
         address.recipient_name,
@@ -207,7 +236,6 @@ export const placeOrder = async (req, res) => {
     );
 
     // Reserve stock immediately.
-    // If an order is cancelled, the stock is returned in updateOrderStatus.
     await connection.execute(
       "UPDATE products SET quantity = quantity - ? WHERE id = ?",
       [requestedQuantity, productId]
@@ -225,7 +253,9 @@ export const placeOrder = async (req, res) => {
       trackingCode,
       status: initialStatus,
       paymentMethod,
-      total,
+      total: pricing.total,
+      discountAmount: pricing.discountAmount,
+      discountPct: pricing.discountPct,
     });
   } catch (error) {
     console.error("Place order error:", error);
@@ -261,6 +291,9 @@ export const getMyOrders = async (req, res) => {
           o.quantity,
           o.unit_price AS unitPrice,
           o.total,
+          COALESCE(o.discount_amount, 0) AS discountAmount,
+          COALESCE(o.discount_pct, 0) AS discountPct,
+          COALESCE(o.original_total, o.total) AS originalTotal,
           o.status,
           o.payment_method AS paymentMethod,
           o.payment_status AS paymentStatus,
@@ -271,6 +304,7 @@ export const getMyOrders = async (req, res) => {
           o.created_at AS createdAt,
           p.name AS productName,
           p.category AS productCategory,
+          p.unit AS productUnit,
           b.name AS businessName
         FROM orders o
         JOIN products p ON o.product_id = p.id
@@ -287,13 +321,18 @@ export const getMyOrders = async (req, res) => {
           o.quantity,
           o.unit_price AS unitPrice,
           o.total,
+          COALESCE(o.discount_amount, 0) AS discountAmount,
+          COALESCE(o.discount_pct, 0) AS discountPct,
+          COALESCE(o.original_total, o.total) AS originalTotal,
           o.status,
           o.payment_method AS paymentMethod,
           o.payment_status AS paymentStatus,
           o.tracking_code AS trackingCode,
+          o.delivery_otp AS deliveryOtp,
           o.created_at AS createdAt,
           p.name AS productName,
           p.category AS productCategory,
+          p.unit AS productUnit,
           f.name AS farmerName
         FROM orders o
         JOIN products p ON o.product_id = p.id
@@ -321,9 +360,7 @@ export const getMyOrders = async (req, res) => {
   }
 };
 
-// Creates all cart items atomically. The existing schema stores one product per
-// order, so a cart checkout produces linked individual order records while the
-// buyer completes one checkout, address selection and payment choice.
+// Creates all cart items atomically.
 export const placeCartOrder = async (req, res) => {
   let connection;
   try {
@@ -353,22 +390,31 @@ export const placeCartOrder = async (req, res) => {
     for (const item of items) {
       const productId = Number(item.productId), quantity = Number(item.quantity);
       if (!Number.isInteger(productId) || !Number.isInteger(quantity) || quantity < 1) throw Object.assign(new Error("Every cart item needs a valid quantity."), { status: 400 });
-      const [products] = await connection.execute(`SELECT id, farmer_id, quantity, price FROM products WHERE id = ? FOR UPDATE`, [productId]);
+      const [products] = await connection.execute(
+        `SELECT id, farmer_id, quantity, price, unit,
+                COALESCE(tier1_min_qty, 51) AS tier1_min_qty,
+                COALESCE(tier1_discount_pct, 10) AS tier1_discount_pct,
+                COALESCE(tier2_min_qty, 201) AS tier2_min_qty,
+                COALESCE(tier2_discount_pct, 20) AS tier2_discount_pct
+         FROM products WHERE id = ? FOR UPDATE`,
+        [productId]
+      );
       const product = products[0];
       if (!product) throw Object.assign(new Error("A cart product is no longer available."), { status: 404 });
       if (Number(product.quantity) < quantity) throw Object.assign(new Error("One or more cart quantities are no longer available."), { status: 400 });
-      const total = Number(product.price) * quantity;
+      
+      const pricing = calculateTierPricing(product.price, quantity, product);
       const status = paymentMethod === 'ONLINE' ? 'Awaiting Payment' : 'Accepted';
       const [result] = await connection.execute(
-        `INSERT INTO orders (product_id, business_id, farmer_id, quantity, unit_price, total, status, delivery_address_id, delivery_name, delivery_phone, delivery_address, payment_method, payment_status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
-        [productId, req.user.id, product.farmer_id, quantity, product.price, total, status, address.id, address.recipient_name, address.phone, fullAddress, paymentMethod]
+        `INSERT INTO orders (product_id, business_id, farmer_id, quantity, unit_price, total, discount_amount, discount_pct, original_total, status, delivery_address_id, delivery_name, delivery_phone, delivery_address, payment_method, payment_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
+        [productId, req.user.id, product.farmer_id, quantity, pricing.unitPrice, pricing.total, pricing.discountAmount, pricing.discountPct, pricing.originalTotal, status, address.id, address.recipient_name, address.phone, fullAddress, paymentMethod]
       );
       const orderId = result.insertId, trackingCode = `FL-${String(orderId).padStart(8, '0')}`;
       await connection.execute("UPDATE orders SET tracking_code = ? WHERE id = ?", [trackingCode, orderId]);
       await connection.execute("INSERT INTO order_tracking_events (order_id, status, note) VALUES (?, ?, ?)", [orderId, status, paymentMethod === 'ONLINE' ? 'Waiting for online payment.' : 'Order accepted automatically because stock is available.']);
       await connection.execute("UPDATE products SET quantity = quantity - ? WHERE id = ?", [quantity, productId]);
-      createdOrders.push({ orderId, total });
+      createdOrders.push({ orderId, total: pricing.total, discountAmount: pricing.discountAmount, discountPct: pricing.discountPct });
     }
     await connection.commit();
     return res.status(201).json({ message: "Cart order placed successfully.", orders: createdOrders, total: createdOrders.reduce((sum, order) => sum + order.total, 0) });
@@ -378,9 +424,7 @@ export const placeCartOrder = async (req, res) => {
   } finally { if (connection) connection.release(); }
 };
 
-// Small aggregate endpoint for dashboard cards. Keeping these totals on the
-// server means the numbers are correct even while the detailed order list is
-// still refreshing in the browser.
+// Small aggregate endpoint for dashboard cards.
 export const getOrderSummary = async (req, res) => {
   try {
     const ownerColumn = req.user.accountType === "farmer"
@@ -440,17 +484,25 @@ export const getOrderTracking = async (req, res) => {
       });
     }
 
-    // ownershipColumn is selected only from the two fixed strings above.
     const [orders] = await pool.execute(
       `SELECT
         o.id,
         o.status,
+        o.total,
+        o.quantity,
+        o.unit_price AS unitPrice,
+        COALESCE(o.discount_amount, 0) AS discountAmount,
+        COALESCE(o.discount_pct, 0) AS discountPct,
+        COALESCE(o.original_total, o.total) AS originalTotal,
         o.payment_method AS paymentMethod,
         o.payment_status AS paymentStatus,
         o.tracking_code AS trackingCode,
         o.delivery_name AS deliveryName,
         o.delivery_phone AS deliveryPhone,
         o.delivery_address AS deliveryAddress,
+        o.delivery_otp AS deliveryOtp,
+        p.name AS productName,
+        p.unit AS productUnit,
         p.location AS farmLocation
       FROM orders o
       JOIN products p ON p.id = o.product_id
@@ -466,6 +518,18 @@ export const getOrderTracking = async (req, res) => {
       });
     }
 
+    if (accountType === "business") {
+      // If the order is Out for Delivery but no OTP is stored yet, generate and persist one.
+      if (order.status === "Out for Delivery" && !order.deliveryOtp) {
+        const generatedOtp = String(Math.floor(1000 + Math.random() * 9000));
+        await pool.execute("UPDATE orders SET delivery_otp = ? WHERE id = ?", [generatedOtp, order.id]);
+        order.deliveryOtp = generatedOtp;
+      }
+    } else {
+      // Never expose the OTP to the farmer or driver
+      delete order.deliveryOtp;
+    }
+
     const [events] = await pool.execute(
       `SELECT
         id,
@@ -479,26 +543,26 @@ export const getOrderTracking = async (req, res) => {
     );
 
     const [locations] = await pool.execute(
-  `SELECT
-    id,
-    latitude,
-    longitude,
-    note,
-    created_at AS createdAt
-   FROM order_delivery_locations
-   WHERE order_id = ?
-   ORDER BY created_at DESC`,
-  [orderId]
-);
+      `SELECT
+        id,
+        latitude,
+        longitude,
+        note,
+        created_at AS createdAt
+       FROM order_delivery_locations
+       WHERE order_id = ?
+       ORDER BY created_at DESC`,
+      [orderId]
+    );
 
-const latestLocation = locations[0] || null;
+    const latestLocation = locations[0] || null;
 
     return res.json({
-  order,
-  events,
-  latestLocation,
-  locations,
-});
+      order,
+      events,
+      latestLocation,
+      locations,
+    });
   } catch (error) {
     console.error("Get order tracking error:", error);
 
@@ -515,7 +579,7 @@ export const updateOrderStatus = async (req, res) => {
 
   try {
     const orderId = Number(req.params.id);
-    const { status, note, trackingCode } = req.body;
+    const { status, note, trackingCode, otp } = req.body;
     const farmerId = req.user.id;
 
     if (!Number.isInteger(orderId) || orderId <= 0) {
@@ -547,10 +611,12 @@ export const updateOrderStatus = async (req, res) => {
       `SELECT
         id,
         product_id,
+        business_id,
         quantity,
         status,
         payment_method,
-        payment_status
+        payment_status,
+        delivery_otp
        FROM orders
        WHERE id = ? AND farmer_id = ?
        FOR UPDATE`,
@@ -584,6 +650,21 @@ export const updateOrderStatus = async (req, res) => {
       });
     }
 
+    // If marking as Delivered, verify the 4-digit Delivery Confirmation OTP
+    if (status === "Delivered") {
+      const submittedOtp = typeof otp === "string" || typeof otp === "number" ? String(otp).trim() : "";
+      const expectedOtp = order.delivery_otp ? String(order.delivery_otp).trim() : "";
+
+      if (!expectedOtp || submittedOtp !== expectedOtp) {
+        await connection.rollback();
+        transactionStarted = false;
+
+        return res.status(400).json({
+          message: "Invalid Delivery Confirmation OTP. Please enter the 4-digit OTP provided by the buyer.",
+        });
+      }
+    }
+
     // Cancellation returns reserved stock to the product.
     if (status === "Cancelled") {
       await connection.execute(
@@ -599,36 +680,69 @@ export const updateOrderStatus = async (req, res) => {
         : order.payment_status;
 
     // Tracking code is optional.
-    // It can be a courier tracking number, delivery vehicle ID, etc.
     const cleanTrackingCode =
       typeof trackingCode === "string" && trackingCode.trim()
         ? trackingCode.trim()
         : null;
+
+    // If transitioning to "Out for Delivery", ensure 4-digit OTP exists
+    let activeOtp = order.delivery_otp;
+    if (status === "Out for Delivery") {
+      if (!activeOtp) {
+        activeOtp = String(Math.floor(1000 + Math.random() * 9000));
+      }
+    }
 
     await connection.execute(
       `UPDATE orders
        SET
          status = ?,
          payment_status = ?,
-         tracking_code = COALESCE(?, tracking_code)
+         tracking_code = COALESCE(?, tracking_code),
+         delivery_otp = ?
        WHERE id = ?`,
-      [status, nextPaymentStatus, cleanTrackingCode, orderId]
+      [status, nextPaymentStatus, cleanTrackingCode, activeOtp, orderId]
     );
 
-    // This is the code you asked about.
-    // It saves every change as a tracking event for the buyer.
     const cleanNote =
       typeof note === "string" && note.trim()
         ? note.trim()
         : status === "Out for Delivery"
           ? "Your order is on the way."
-          : `Order status changed to ${status}.`;
+          : status === "Delivered"
+            ? "Order delivered successfully. Verified with confirmation OTP."
+            : `Order status changed to ${status}.`;
 
     await connection.execute(
       `INSERT INTO order_tracking_events (order_id, status, note)
        VALUES (?, ?, ?)`,
       [orderId, status, cleanNote]
     );
+
+    // If order goes Out for Delivery or Delivered, notify the buyer
+    if (status === "Out for Delivery") {
+      await connection.execute(
+        `INSERT INTO order_notifications (user_id, order_id, type, title, message)
+         VALUES (?, ?, 'ORDER_OUT_FOR_DELIVERY', 'Order Out for Delivery', ?)
+         ON DUPLICATE KEY UPDATE message = VALUES(message), is_read = FALSE, created_at = CURRENT_TIMESTAMP`,
+        [
+          order.business_id,
+          orderId,
+          `Your order #${orderId} is out for delivery! Your Delivery Confirmation OTP is ${activeOtp}. Please share this OTP with the driver upon delivery.`
+        ]
+      );
+    } else if (status === "Delivered") {
+      await connection.execute(
+        `INSERT INTO order_notifications (user_id, order_id, type, title, message)
+         VALUES (?, ?, 'ORDER_DELIVERED', 'Order Delivered', ?)
+         ON DUPLICATE KEY UPDATE message = VALUES(message), is_read = FALSE, created_at = CURRENT_TIMESTAMP`,
+        [
+          order.business_id,
+          orderId,
+          `Your order #${orderId} has been successfully delivered and verified with OTP confirmation.`
+        ]
+      );
+    }
 
     await connection.commit();
     transactionStarted = false;
@@ -644,7 +758,7 @@ export const updateOrderStatus = async (req, res) => {
     }
 
     return res.status(500).json({
-      message: "Could not update order status.",
+      message: error.message || "Could not update order status.",
     });
   } finally {
     if (connection) {
@@ -654,8 +768,6 @@ export const updateOrderStatus = async (req, res) => {
 };
 
 // A buyer or farmer can cancel an order while it has not yet left for delivery.
-// The reserved quantity is restored atomically, so it immediately becomes
-// available in the marketplace again.
 export const cancelOrder = async (req, res) => {
   let connection;
   let transactionStarted = false;
@@ -706,9 +818,6 @@ export const cancelOrder = async (req, res) => {
       return res.status(404).json({ message: "Order not found." });
     }
 
-    // A paid online order cannot be cancelled by either party. This check is
-    // inside the locked transaction so the dashboard restriction cannot be
-    // bypassed with a direct API request.
     const paymentStatus = String(order.payment_status || "").toUpperCase();
     const hasSuccessfulOnlinePayment =
       order.payment_method === "ONLINE" &&
@@ -751,8 +860,6 @@ export const cancelOrder = async (req, res) => {
       [order.id, cancelledStatus, `Order cancelled by the ${actor}: ${finalReason}. Stock has been restored.`]
     );
 
-    // Cancelled orders are hidden from the active order list, so notify the
-    // other participant and keep the cancellation visible in their dashboard.
     const cancelledByBuyer = accountType === "business";
     const notificationUserId = cancelledByBuyer ? order.farmer_id : order.business_id;
     const cancellingUserName = cancelledByBuyer ? order.buyerName : order.farmerName;
