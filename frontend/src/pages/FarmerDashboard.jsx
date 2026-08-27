@@ -2,18 +2,11 @@ import { api } from "../api";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import CancellationModal from "../components/CancellationModal";
+import { getProductImage, handleImageError } from "../productImages";
 
-const categoryImages = {
-  vegetables: "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=1000&q=85",
-  fruits: "https://images.unsplash.com/photo-1610832958506-aa56368176cf?auto=format&fit=crop&w=1000&q=85",
-  grains: "https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?auto=format&fit=crop&w=1000&q=85",
-  pulses: "/pulses.svg",
-};
-
-function categoryImage(category) {
-  const value = String(category || "").toLowerCase();
-  const key = Object.keys(categoryImages).find((item) => value.includes(item.slice(0, -1)));
-  return categoryImages[key || "vegetables"];
+function hasSuccessfulOnlinePayment(order) {
+  const paymentStatus = String(order.paymentStatus || "").toUpperCase();
+  return order.paymentMethod === "ONLINE" && ["PAID", "SUCCESS"].includes(paymentStatus);
 }
 
 function FarmerDashboard() {
@@ -99,7 +92,7 @@ function FarmerDashboard() {
     (total, order) => total + Number(order.total),
     0
   );
-  const unreadNotificationCount = notifications.filter((notification) => !Boolean(notification.isRead)).length;
+  const unreadNotificationCount = notifications.filter((notification) => !notification.isRead).length;
 
   async function openNotification(notification) {
     try {
@@ -275,6 +268,7 @@ function FarmerDashboard() {
     <div className="dashboard-page">
       <aside className="sidebar">
         <h2>🌱 FarmLink</h2>
+        <Link to="/">Home</Link>
         <Link to="/farmer-dashboard">Dashboard</Link>
         <a href="#products">My Products</a>
         <a href="#orders">Orders</a>
@@ -385,8 +379,9 @@ function FarmerDashboard() {
               {products.map((product) => (
                 <article className="product-card farmer-product-card" key={product.id}>
                   <img
-                    src={categoryImage(product.category)}
+                    src={getProductImage(product)}
                     alt={product.name}
+                    onError={(event) => handleImageError(event, product.category, product.name)}
                   />
 
                   <h3>{product.name}</h3>
@@ -431,8 +426,9 @@ function FarmerDashboard() {
                 <article className="order-card" key={order.id}>
                   <img
                     className="order-product-image"
-                    src={categoryImage(order.productCategory)}
+                    src={getProductImage(order.productCategory, order.productName)}
                     alt={order.productCategory || "Produce"}
+                    onError={(event) => handleImageError(event, order.productCategory, order.productName)}
                   />
                   <div className="order-product-details">
                     <h3>{order.productName}</h3>
@@ -460,7 +456,9 @@ function FarmerDashboard() {
                       View Tracking
                     </Link>
 
-                    {order.status === "Pending" && (
+                    {hasSuccessfulOnlinePayment(order) ? (
+                      <p className="paid-order-cancellation-notice">This order has been paid online and cannot be cancelled.</p>
+                    ) : order.status === "Pending" && (
                       <div className="order-actions">
                         <button
                           className="cancel-btn"
@@ -471,9 +469,18 @@ function FarmerDashboard() {
                       </div>
                     )}
 
-                   {order.status === "Accepted" && (
-  <div className="order-actions"><button className="accept-btn" onClick={() => startDelivery(order.id)}>Start Delivery</button><button className="cancel-btn" onClick={() => setCancellingOrderId(order.id)}>Cancel Order</button></div>
-)}
+                    {order.status === "Accepted" && (
+                      <div className="order-actions">
+                        <button className="accept-btn" onClick={() => startDelivery(order.id)}>
+                          Start Delivery
+                        </button>
+                        {!hasSuccessfulOnlinePayment(order) && (
+                          <button className="cancel-btn" onClick={() => setCancellingOrderId(order.id)}>
+                            Cancel Order
+                          </button>
+                        )}
+                      </div>
+                    )}
 
 {order.status === "Out for Delivery" && (
   <div className="order-actions">

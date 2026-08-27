@@ -22,7 +22,7 @@ router.get("/mine", authMiddleware, getMyOrders);
 router.get("/summary", authMiddleware, getOrderSummary);
 
 router.get("/notifications", authMiddleware, getOrderNotifications);
-router.patch("/notifications/:notificationId/read", authMiddleware, allowRoles("farmer"), markOrderNotificationRead);
+router.patch("/notifications/:notificationId/read", authMiddleware, allowRoles("farmer", "business"), markOrderNotificationRead);
 
 router.get("/:id/tracking", authMiddleware, getOrderTracking);
 

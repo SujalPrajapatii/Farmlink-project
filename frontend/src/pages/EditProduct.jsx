@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
+import { getDefaultProduceImage, handleImageError } from "../productImages";
 
 function EditProduct() {
   const { id } = useParams();
@@ -24,6 +25,9 @@ function EditProduct() {
 
   const [loading, setLoading] = useState(true);
   const [productFound, setProductFound] = useState(true);
+
+  const autoImage = getDefaultProduceImage(formData.category, formData.name);
+  const displayImage = formData.image?.trim() || autoImage;
 
   useEffect(() => {
     if (accountType !== "farmer") return;
@@ -71,10 +75,15 @@ function EditProduct() {
   async function handleSubmit(event) {
     event.preventDefault();
 
+    const payload = {
+      ...formData,
+      image: formData.image?.trim() || autoImage,
+    };
+
     try {
       await api(`/products/${id}`, {
         method: "PUT",
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
       alert("Product updated successfully!");
@@ -150,7 +159,6 @@ function EditProduct() {
           onChange={handleChange}
           required
         >
-          <option value="">Select category</option>
           <option value="Vegetables">Vegetables</option>
           <option value="Fruits">Fruits</option>
           <option value="Grains">Grains</option>
@@ -202,13 +210,26 @@ function EditProduct() {
           required
         />
 
-        <label>Image URL (optional)</label>
+        <label>Product Photo Preview</label>
+        <div style={{ marginTop: "6px", marginBottom: "14px" }}>
+          <img
+            src={displayImage}
+            alt="Product preview"
+            onError={(e) => handleImageError(e, formData.category, formData.name)}
+            style={{ width: "100%", height: "170px", objectFit: "cover", borderRadius: "12px", border: "1px solid #d7e4d6", display: "block" }}
+          />
+          <small style={{ display: "block", marginTop: "6px", color: "#457353", fontWeight: "600" }}>
+            {formData.image?.trim() ? "✓ Using custom photo URL" : "✨ Auto-selected by crop type & category"}
+          </small>
+        </div>
+
+        <label>Custom Image URL (optional)</label>
         <input
           type="url"
           name="image"
           value={formData.image}
           onChange={handleChange}
-          placeholder="Paste an image URL"
+          placeholder="Leave blank to use the auto-selected photo above"
         />
 
         <button className="farmer-btn" type="submit">
@@ -219,4 +240,4 @@ function EditProduct() {
   );
 }
 
-export default EditProduct;
+export default EditProduct;

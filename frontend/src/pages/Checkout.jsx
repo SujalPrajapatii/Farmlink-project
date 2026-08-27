@@ -34,7 +34,7 @@ function Checkout() {
     addressLine1: "",
     addressLine2: "",
     city: "",
-    state: "",
+    state: "Gujarat",
     pincode: "",
     isDefault: false,
   });
@@ -133,7 +133,7 @@ function Checkout() {
         addressLine1: "",
         addressLine2: "",
         city: "",
-        state: "",
+        state: "Gujarat",
         pincode: "",
         isDefault: false,
       });
@@ -381,13 +381,10 @@ function Checkout() {
               />
 
               <label>State</label>
-              <input
-                type="text"
-                name="state"
-                value={addressForm.state}
-                onChange={handleAddressChange}
-                required
-              />
+              <select name="state" value={addressForm.state} onChange={handleAddressChange} required>
+                <option value="Gujarat">Gujarat</option>
+              </select>
+              <p className="delivery-coverage-note">FarmLink deliveries are currently available only in Gujarat.</p>
 
               <label>6-Digit Pincode</label>
               <input

@@ -3,6 +3,9 @@ import pool from "../config/db.js";
 const isText = (value) =>
   typeof value === "string" && value.trim().length > 0;
 
+const isGujarat = (state) =>
+  typeof state === "string" && state.trim().toLowerCase() === "gujarat";
+
 export const createAddress = async (req, res) => {
   try {
     const {
@@ -27,6 +30,12 @@ export const createAddress = async (req, res) => {
       return res.status(400).json({
         message:
           "Recipient name, phone, address, city, state, and valid 6-digit pincode are required.",
+      });
+    }
+
+    if (!isGujarat(state)) {
+      return res.status(400).json({
+        message: "FarmLink deliveries are currently available only in Gujarat.",
       });
     }
 
@@ -67,7 +76,7 @@ export const createAddress = async (req, res) => {
           addressLine1.trim(),
           isText(addressLine2) ? addressLine2.trim() : null,
           city.trim(),
-          state.trim(),
+          "Gujarat",
           String(pincode),
           Boolean(isDefault),
         ]

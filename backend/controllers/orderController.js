@@ -1,5 +1,8 @@
 import pool from "../config/db.js";
 
+const isGujarat = (state) =>
+  typeof state === "string" && state.trim().toLowerCase() === "gujarat";
+
 // Business buyer creates an order.
 // The buyer must select:
 // 1. A product
@@ -111,6 +114,14 @@ export const placeOrder = async (req, res) => {
 
       return res.status(404).json({
         message: "Delivery address not found.",
+      });
+    }
+
+    if (!isGujarat(address.state)) {
+      await connection.rollback();
+      transactionStarted = false;
+      return res.status(400).json({
+        message: "Orders can currently be delivered only to addresses in Gujarat.",
       });
     }
 
@@ -330,6 +341,12 @@ export const placeCartOrder = async (req, res) => {
     );
     const address = addresses[0];
     if (!address) throw Object.assign(new Error("Delivery address not found."), { status: 404 });
+    if (!isGujarat(address.state)) {
+      throw Object.assign(
+        new Error("Orders can currently be delivered only to addresses in Gujarat."),
+        { status: 400 }
+      );
+    }
     const fullAddress = [address.address_line1, address.address_line2, address.city, address.state, address.pincode].filter(Boolean).join(", ");
     const createdOrders = [];
 
@@ -669,11 +686,13 @@ export const cancelOrder = async (req, res) => {
     transactionStarted = true;
 
     const [orders] = await connection.execute(
-      `SELECT o.id, o.product_id, o.farmer_id, o.quantity, o.status,
-              p.name AS productName, b.name AS buyerName
+      `SELECT o.id, o.product_id, o.business_id, o.farmer_id, o.quantity, o.status,
+              o.payment_method, o.payment_status,
+              p.name AS productName, b.name AS buyerName, f.name AS farmerName
        FROM orders o
        JOIN products p ON p.id = o.product_id
        JOIN users b ON b.id = o.business_id
+       JOIN users f ON f.id = o.farmer_id
        WHERE o.id = ? AND o.${ownershipColumn} = ?
        FOR UPDATE`,
       [orderId, userId]
@@ -685,6 +704,22 @@ export const cancelOrder = async (req, res) => {
       await connection.rollback();
       transactionStarted = false;
       return res.status(404).json({ message: "Order not found." });
+    }
+
+    // A paid online order cannot be cancelled by either party. This check is
+    // inside the locked transaction so the dashboard restriction cannot be
+    // bypassed with a direct API request.
+    const paymentStatus = String(order.payment_status || "").toUpperCase();
+    const hasSuccessfulOnlinePayment =
+      order.payment_method === "ONLINE" &&
+      ["PAID", "SUCCESS"].includes(paymentStatus);
+
+    if (hasSuccessfulOnlinePayment) {
+      await connection.rollback();
+      transactionStarted = false;
+      return res.status(409).json({
+        message: "This order has been paid online and cannot be cancelled.",
+      });
     }
 
     if (!allowedStatuses.includes(order.status)) {
@@ -716,16 +751,20 @@ export const cancelOrder = async (req, res) => {
       [order.id, cancelledStatus, `Order cancelled by the ${actor}: ${finalReason}. Stock has been restored.`]
     );
 
-    // A buyer cancellation must remain visible to the seller after cancelled
-    // orders leave the regular orders list.
-    if (accountType === "business") {
-      await connection.execute(
-        `INSERT INTO order_notifications (user_id, order_id, type, title, message)
-         VALUES (?, ?, 'ORDER_CANCELLED_BY_BUYER', 'Order Cancelled', ?)
-         ON DUPLICATE KEY UPDATE id = id`,
-        [order.farmer_id, order.id, `${order.buyerName} cancelled Order #${order.id} (${order.productName}). Reason: ${finalReason}`]
-      );
-    }
+    // Cancelled orders are hidden from the active order list, so notify the
+    // other participant and keep the cancellation visible in their dashboard.
+    const cancelledByBuyer = accountType === "business";
+    const notificationUserId = cancelledByBuyer ? order.farmer_id : order.business_id;
+    const cancellingUserName = cancelledByBuyer ? order.buyerName : order.farmerName;
+    const notificationType = cancelledByBuyer
+      ? "ORDER_CANCELLED_BY_BUYER"
+      : "ORDER_CANCELLED_BY_FARMER";
+    await connection.execute(
+      `INSERT INTO order_notifications (user_id, order_id, type, title, message)
+       VALUES (?, ?, ?, 'Order Cancelled', ?)
+       ON DUPLICATE KEY UPDATE id = id`,
+      [notificationUserId, order.id, notificationType, `${cancellingUserName} cancelled Order #${order.id} (${order.productName}). Reason: ${finalReason}`]
+    );
 
     await connection.commit();
     transactionStarted = false;
@@ -742,7 +781,6 @@ export const cancelOrder = async (req, res) => {
 
 export const getOrderNotifications = async (req, res) => {
   try {
-    if (req.user.accountType !== "farmer") return res.json([]);
     const [notifications] = await pool.execute(
       `SELECT id, order_id AS orderId, type, title, message,
               is_read AS isRead, created_at AS createdAt
@@ -757,7 +795,6 @@ export const getOrderNotifications = async (req, res) => {
 
 export const markOrderNotificationRead = async (req, res) => {
   try {
-    if (req.user.accountType !== "farmer") return res.status(403).json({ message: "Farmer access required." });
     const notificationId = Number(req.params.notificationId);
     if (!Number.isInteger(notificationId) || notificationId <= 0) return res.status(400).json({ message: "Invalid notification ID." });
     const [result] = await pool.execute(

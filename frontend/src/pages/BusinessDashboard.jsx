@@ -2,17 +2,11 @@ import { api } from "../api";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import CancellationModal from "../components/CancellationModal";
+import { CATEGORY_IMAGES, getCategoryKey, getProductImage, handleImageError } from "../productImages";
 
-const categoryImages = {
-  vegetables: "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=1000&q=85",
-  fruits: "https://images.unsplash.com/photo-1610832958506-aa56368176cf?auto=format&fit=crop&w=1000&q=85",
-  grains: "https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?auto=format&fit=crop&w=1000&q=85",
-  pulses: "/pulses.svg",
-};
-
-function categoryKey(category) {
-  const value = String(category || "").toLowerCase();
-  return Object.keys(categoryImages).find((key) => value.includes(key.slice(0, -1))) || "vegetables";
+function hasSuccessfulOnlinePayment(order) {
+  const paymentStatus = String(order.paymentStatus || "").toUpperCase();
+  return order.paymentMethod === "ONLINE" && ["PAID", "SUCCESS"].includes(paymentStatus);
 }
 
 function BusinessDashboard() {
@@ -35,6 +29,8 @@ function BusinessDashboard() {
   const [quantity, setQuantity] = useState({});
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [cart, setCart] = useState(() => JSON.parse(localStorage.getItem("farmlinkCart") || "[]"));
+  const [notifications, setNotifications] = useState([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [cancellingOrderId, setCancellingOrderId] = useState(null);
   const [isCancelling, setIsCancelling] = useState(false);
 
@@ -65,16 +61,18 @@ function BusinessDashboard() {
 
     async function loadDashboardData() {
       try {
-        const [productsData, ordersData, summaryData] = await Promise.all([
+        const [productsData, ordersData, summaryData, notificationsData] = await Promise.all([
           api("/products"),
           api("/orders/mine"),
           api("/orders/summary"),
+          api("/orders/notifications"),
         ]);
 
         if (!active) return;
         setProducts(productsData);
         setOrders(ordersData);
         setOrderSummary(summaryData);
+        setNotifications(notificationsData);
       } catch (error) {
         // Do not repeatedly interrupt a buyer when a background refresh has a
         // temporary network problem. The first load still explains the error.
@@ -86,7 +84,9 @@ function BusinessDashboard() {
 
     loadDashboardData();
     window.addEventListener("focus", loadDashboardData);
-    const refreshId = window.setInterval(loadDashboardData, 15000);
+    // A farmer cancellation removes the order from this list. Refresh often
+    // enough that its notification appears promptly in the buyer dashboard.
+    const refreshId = window.setInterval(loadDashboardData, 5000);
 
     return () => {
       active = false;
@@ -116,10 +116,25 @@ function BusinessDashboard() {
 
     return (
       Number(product.quantity) > 0 &&
-      (selectedCategory === "all" || categoryKey(product.category) === selectedCategory) &&
+      (selectedCategory === "all" || getCategoryKey(product.category) === getCategoryKey(selectedCategory)) &&
       searchableText.includes(search.toLowerCase())
     );
   });
+  const unreadNotificationCount = notifications.filter((notification) => !notification.isRead).length;
+
+  async function openNotification(notification) {
+    try {
+      if (!notification.isRead) {
+        await api(`/orders/notifications/${notification.id}/read`, { method: "PATCH" });
+        setNotifications((currentNotifications) => currentNotifications.map((current) => (
+          current.id === notification.id ? { ...current, isRead: true } : current
+        )));
+      }
+      navigate(`/orders/${notification.orderId}/tracking`);
+    } catch (error) {
+      alert(error.message);
+    }
+  }
 
   // const completedOrders = orders.filter((order) => order.status === "Delivered");
   // const totalSpent = completedOrders.reduce((total, order) => total + Number(order.total), 0);
@@ -205,10 +220,14 @@ function BusinessDashboard() {
     <div className="dashboard-page">
       <aside className="sidebar">
         <h2>🌱 FarmLink</h2>
+        <Link to="/">Home</Link>
         <Link to="/business-dashboard">Marketplace</Link>
         <a href="#products">Available Products</a>
         <a href="#orders">My Orders</a>
         <button className="sidebar-cart" onClick={() => navigate("/checkout", { state: { cart } })}>Cart ({cart.length})</button>
+        <button className="sidebar-cart" onClick={() => setNotificationsOpen((isOpen) => !isOpen)}>
+          Notifications{unreadNotificationCount ? ` (${unreadNotificationCount})` : ""}
+        </button>
 
         <button className="sidebar-logout" onClick={handleLogout}>
           Logout
@@ -228,14 +247,83 @@ function BusinessDashboard() {
 
         <section className="market-trust" aria-label="FarmLink buyer benefits"><article><span>✓</span><div><strong>Verified farmers</strong><p>Trade directly with growers</p></div></article><article><span>◈</span><div><strong>Clear pricing</strong><p>No hidden marketplace fees</p></div></article><article><span>⌁</span><div><strong>Live order tracking</strong><p>Stay updated through delivery</p></div></article><article><span>✦</span><div><strong>Freshness first</strong><p>Harvested for your business</p></div></article></section>
 
+        {notificationsOpen && (
+          <section className="product-section order-notifications" aria-live="polite">
+            <h2>Order Notifications</h2>
+            {notifications.length === 0 ? <p className="muted-text">You have no notifications.</p> : (
+              <div className="notification-list">
+                {notifications.map((notification) => (
+                  <button className={`order-notification ${notification.isRead ? "is-read" : "is-unread"}`} key={notification.id} type="button" onClick={() => openNotification(notification)}>
+                    <strong>{notification.title || "Order Cancelled"}</strong>
+                    <span>{notification.message}</span>
+                    <time dateTime={notification.createdAt}>{new Date(notification.createdAt).toLocaleString()}</time>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+
         <section className="market-order-stats" aria-label="Order summary"><article><span>Total orders</span><strong>{orderSummary.totalOrders}</strong><small>Orders placed</small></article><article><span>Completed</span><strong>{orderSummary.completedOrders}</strong><small>Delivered successfully</small></article><article><span>Total spent</span><strong>₹{orderSummary.completedTotal.toLocaleString("en-IN")}</strong><small>Delivered orders only</small></article></section>
 
         <section className="market-intro" id="products">
-          <div><p className="section-tag">SHOP BY CATEGORY</p><h2>Fresh picks for your business.</h2><p>Welcome back, {currentUser.name}. Find the right produce for your next order.</p></div>
-          <label className="market-search"><span>⌕</span><input type="search" placeholder="Search crop, category, or location..." value={search} onChange={(event) => setSearch(event.target.value)} /></label>
-        </section>
+          <div>
+            <p className="section-tag">EXPLORE CATEGORIES</p>
+            <h2>Fresh picks for your business.</h2>
+            <p>Welcome back, {currentUser.name}. Explore farm produce by category or search below.</p>
+          </div>
+          
+          <div className="category-grid market-category-cards" style={{ margin: "20px 0 25px" }}>
+            {[
+              { key: "vegetables", name: "Vegetables", image: CATEGORY_IMAGES.vegetables },
+              { key: "fruits", name: "Fruits", image: CATEGORY_IMAGES.fruits },
+              { key: "grains", name: "Grains", image: CATEGORY_IMAGES.grains },
+              { key: "pulses", name: "Pulses", image: CATEGORY_IMAGES.pulses },
+            ].map((cat) => (
+              <div
+                key={cat.key}
+                className={`category-card ${selectedCategory === cat.key ? "is-selected-card" : ""}`}
+                style={{ cursor: "pointer" }}
+                onClick={() => setSelectedCategory(selectedCategory === cat.key ? "all" : cat.key)}
+              >
+                <img src={cat.image} alt={cat.name} onError={(e) => handleImageError(e, cat.key)} />
+                <span>
+                  {cat.name}
+                  <small>{selectedCategory === cat.key ? "✓ Filtered (Click to reset)" : "Explore produce →"}</small>
+                </span>
+              </div>
+            ))}
+          </div>
 
-        <div className="market-category-pills" aria-label="Product categories"><button className={selectedCategory === "all" ? "is-active" : ""} onClick={() => setSelectedCategory("all")}>All produce</button>{Object.keys(categoryImages).map((key) => <button key={key} className={selectedCategory === key ? "is-active" : ""} onClick={() => setSelectedCategory(key)}>{key[0].toUpperCase() + key.slice(1)}</button>)}</div>
+          <label className="market-search">
+            <span>⌕</span>
+            <input
+              type="search"
+              placeholder="Search crop, category, or location..."
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
+
+          <div className="market-category-pills" aria-label="Product categories">
+            <button
+              className={selectedCategory === "all" ? "is-active" : ""}
+              onClick={() => setSelectedCategory("all")}
+            >
+              All produce
+            </button>
+            {["vegetables", "fruits", "grains", "pulses"].map((key) => (
+              <button
+                key={key}
+                className={selectedCategory === key ? "is-active" : ""}
+                onClick={() => setSelectedCategory(key)}
+              >
+                {key[0].toUpperCase() + key.slice(1)}
+              </button>
+            ))}
+          </div>
+        </section>
 
         <section className="product-section market-product-section">
           <div className="section-heading"><h2>Available produce</h2><span>{filteredProducts.length} fresh listing{filteredProducts.length === 1 ? "" : "s"}</span></div>
@@ -251,8 +339,9 @@ function BusinessDashboard() {
               {filteredProducts.map((product) => (
                 <article className="product-card market-product-card" key={product.id}>
                   <img
-                    src={categoryImages[categoryKey(product.category)]}
+                    src={getProductImage(product)}
                     alt={product.name}
+                    onError={(event) => handleImageError(event, product.category, product.name)}
                   />
                   <span className="market-product-category">{product.category}</span>
                   <h3>{product.name}</h3>
@@ -311,8 +400,9 @@ function BusinessDashboard() {
                 <article className="order-card" key={order.id}>
                   <img
                     className="order-product-image"
-                    src={categoryImages[categoryKey(order.productCategory)]}
+                    src={getProductImage(order.productCategory, order.productName)}
                     alt={order.productCategory || "Produce"}
+                    onError={(event) => handleImageError(event, order.productCategory, order.productName)}
                   />
                   <div className="order-product-details">
                     <h3>{order.productName}</h3>
@@ -333,12 +423,16 @@ function BusinessDashboard() {
                       {order.status}
                     </span>
                     <Link
-  className="login-btn"
-  to={`/orders/${order.id}/tracking`}
->
-  Track Order
-</Link>
-                    {["Awaiting Payment", "Pending", "Accepted"].includes(order.status) && <button className="cancel-btn" onClick={() => setCancellingOrderId(order.id)}>Cancel Order</button>}
+                      className="login-btn"
+                      to={`/orders/${order.id}/tracking`}
+                    >
+                      Track Order
+                    </Link>
+                    {hasSuccessfulOnlinePayment(order) ? (
+                      <p className="paid-order-cancellation-notice">This order has been paid online and cannot be cancelled.</p>
+                    ) : ["Awaiting Payment", "Pending", "Accepted"].includes(order.status) && (
+                      <button className="cancel-btn" onClick={() => setCancellingOrderId(order.id)}>Cancel Order</button>
+                    )}
                   </div>
                 </article>
               ))}
