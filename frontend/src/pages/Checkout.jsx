@@ -270,7 +270,8 @@ function Checkout() {
         return;
       }
 
-      for (const order of orderResult.orders) await payOnline(order.orderId);
+      const mainOrderId = orderResult.orderId || (orderResult.orders && orderResult.orders[0]?.orderId);
+      await payOnline(mainOrderId);
 
       alert(
         "Online payment successful. Your order has been accepted and is ready for delivery."

@@ -12,6 +12,7 @@ import {
   cancelOrder,
   getOrderNotifications,
   markOrderNotificationRead,
+  deleteOrderNotification,
   addDeliveryLocation,
 } from "../controllers/orderController.js";
 
@@ -23,6 +24,7 @@ router.get("/summary", authMiddleware, getOrderSummary);
 
 router.get("/notifications", authMiddleware, getOrderNotifications);
 router.patch("/notifications/:notificationId/read", authMiddleware, allowRoles("farmer", "business"), markOrderNotificationRead);
+router.delete("/notifications/:notificationId", authMiddleware, allowRoles("farmer", "business"), deleteOrderNotification);
 
 router.get("/:id/tracking", authMiddleware, getOrderTracking);
 

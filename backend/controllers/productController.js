@@ -100,7 +100,7 @@ export const getAllProducts = async (req, res) => {
   try {
     const [products] = await pool.execute(`
       SELECT
-        p.id,
+        p.p_id AS id,
         p.name,
         p.category,
         p.quantity,
@@ -115,7 +115,7 @@ export const getAllProducts = async (req, res) => {
         p.created_at AS createdAt,
         u.name AS ownerName
       FROM products p
-      JOIN users u ON p.farmer_id = u.id
+      JOIN users u ON p.farmer_id = u.u_id
       WHERE p.quantity > 0
       ORDER BY p.created_at DESC
     `);
@@ -137,7 +137,7 @@ export const getMyProducts = async (req, res) => {
 
     const [products] = await pool.execute(
       `SELECT
-        id,
+        p_id AS id,
         name,
         category,
         quantity,
@@ -231,7 +231,7 @@ export const updateProduct = async (req, res) => {
         tier1_discount_pct = ?,
         tier2_min_qty = ?,
         tier2_discount_pct = ?
-      WHERE id = ? AND farmer_id = ?`,
+      WHERE p_id = ? AND farmer_id = ?`,
       [
         name.trim(),
         category.trim(),
@@ -280,7 +280,7 @@ export const deleteProduct = async (req, res) => {
     }
 
     const [result] = await pool.execute(
-      "DELETE FROM products WHERE id = ? AND farmer_id = ?",
+      "DELETE FROM products WHERE p_id = ? AND farmer_id = ?",
       [productId, farmerId]
     );
 

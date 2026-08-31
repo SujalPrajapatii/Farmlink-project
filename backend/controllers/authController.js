@@ -49,7 +49,7 @@ export const register = async (req, res) => {
 
     // Check email already exists or not
     const [existingUsers] = await pool.execute(
-      "SELECT id FROM users WHERE email = ?",
+      "SELECT u_id FROM users WHERE email = ?",
       [cleanEmail]
     );
 
@@ -119,7 +119,7 @@ export const login = async (req, res) => {
 
     // Find user in MySQL
     const [users] = await pool.execute(
-      "SELECT * FROM users WHERE email = ?",
+      "SELECT u_id AS id, name, email, password_hash, account_type FROM users WHERE email = ?",
       [cleanEmail]
     );
 

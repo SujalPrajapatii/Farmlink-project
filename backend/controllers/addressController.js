@@ -109,7 +109,7 @@ export const getMyAddresses = async (req, res) => {
 
     const [addresses] = await pool.execute(
       `SELECT
-        id,
+        da_id AS id,
         recipient_name AS recipientName,
         phone,
         address_line1 AS addressLine1,

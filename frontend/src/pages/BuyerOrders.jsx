@@ -48,11 +48,11 @@ function BuyerOrders() {
         ]);
 
         if (!active) return;
-        setOrders(ordersData || []);
+        setOrders(Array.isArray(ordersData) ? ordersData : []);
         setOrderSummary(summaryData || { totalOrders: 0, completedOrders: 0, completedTotal: 0 });
-        setNotifications(notificationsData || []);
+        setNotifications(Array.isArray(notificationsData) ? notificationsData : []);
       } catch (error) {
-        if (firstLoad && active) alert(error.message);
+        if (firstLoad && active) console.error("Error loading buyer orders:", error);
       } finally {
         if (active) setLoading(false);
         firstLoad = false;
@@ -84,19 +84,31 @@ function BuyerOrders() {
     );
   }
 
-  const unreadNotificationCount = notifications.filter((notification) => !notification.isRead).length;
+  const safeOrders = Array.isArray(orders) ? orders : [];
+  const safeNotifications = Array.isArray(notifications) ? notifications : [];
+  const unreadNotificationCount = safeNotifications.filter((notification) => notification && !notification.isRead).length;
 
   async function openNotification(notification) {
     try {
       if (!notification.isRead) {
         await api(`/orders/notifications/${notification.id}/read`, { method: "PATCH" });
-        setNotifications((currentNotifications) => currentNotifications.map((current) => (
+        setNotifications((currentNotifications) => (Array.isArray(currentNotifications) ? currentNotifications : []).map((current) => (
           current.id === notification.id ? { ...current, isRead: true } : current
         )));
       }
       navigate(`/orders/${notification.orderId}/tracking`);
     } catch (error) {
       alert(error.message);
+    }
+  }
+
+  async function dismissNotification(notificationId, e) {
+    if (e) e.stopPropagation();
+    try {
+      setNotifications((current) => (Array.isArray(current) ? current.filter((n) => n.id !== notificationId) : []));
+      await api(`/orders/notifications/${notificationId}`, { method: "DELETE" });
+    } catch (error) {
+      console.error("Failed to dismiss notification:", error);
     }
   }
 
@@ -114,7 +126,7 @@ function BuyerOrders() {
         body: JSON.stringify({ reason, customReason }),
       });
       setOrders((currentOrders) =>
-        currentOrders.filter((order) => order.id !== cancellingOrderId)
+        (Array.isArray(currentOrders) ? currentOrders : []).filter((order) => order.id !== cancellingOrderId)
       );
       alert(result.message);
       setCancellingOrderId(null);
@@ -122,7 +134,7 @@ function BuyerOrders() {
         api("/orders/mine"),
         api("/orders/summary"),
       ]);
-      setOrders(updatedOrders || []);
+      setOrders(Array.isArray(updatedOrders) ? updatedOrders : []);
       setOrderSummary(summaryData || { totalOrders: 0, completedOrders: 0, completedTotal: 0 });
     } catch (error) {
       alert(error.message);
@@ -131,7 +143,8 @@ function BuyerOrders() {
     }
   }
 
-  const filteredOrders = orders.filter((order) => {
+  const filteredOrders = safeOrders.filter((order) => {
+    if (!order) return false;
     if (statusFilter === "all") return true;
     if (statusFilter === "active") return ["Pending", "Accepted", "Out for Delivery", "Awaiting Payment"].includes(order.status);
     if (statusFilter === "delivered") return order.status === "Delivered";
@@ -197,18 +210,28 @@ function BuyerOrders() {
             ) : (
               <div className="notification-list">
                 {notifications.map((notification) => (
-                  <button
-                    className={`order-notification ${notification.isRead ? "is-read" : "is-unread"}`}
-                    key={notification.id}
-                    type="button"
-                    onClick={() => openNotification(notification)}
-                  >
-                    <strong>{notification.title || "Order Update"}</strong>
-                    <span>{notification.message}</span>
-                    <time dateTime={notification.createdAt}>
-                      {new Date(notification.createdAt).toLocaleString()}
-                    </time>
-                  </button>
+                  <div className="order-notification-wrapper" key={notification.id}>
+                    <button
+                      className={`order-notification ${notification.isRead ? "is-read" : "is-unread"}`}
+                      type="button"
+                      onClick={() => openNotification(notification)}
+                    >
+                      <strong>{notification.title || "Order Update"}</strong>
+                      <span>{notification.message}</span>
+                      <time dateTime={notification.createdAt}>
+                        {new Date(notification.createdAt).toLocaleString()}
+                      </time>
+                    </button>
+                    <button
+                      className="notification-dismiss-btn"
+                      type="button"
+                      title="Dismiss notification"
+                      aria-label="Dismiss notification"
+                      onClick={(e) => dismissNotification(notification.id, e)}
+                    >
+                      ✕
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -258,53 +281,145 @@ function BuyerOrders() {
               </Link>
             </div>
           ) : (
-            <div className="order-list">
-              {filteredOrders.map((order) => (
-                <article className="order-card" key={order.id}>
-                  <img
-                    className="order-product-image"
-                    src={getProductImage(order.productCategory, order.productName)}
-                    alt={order.productName || "Produce"}
-                    onError={(event) => handleImageError(event, order.productCategory, order.productName)}
-                  />
-                  <div className="order-product-details">
-                    <h3>{order.productName}</h3>
-                    <p>
-                      <strong>Farmer:</strong> {order.farmerName} · <strong>Quantity:</strong> {order.quantity}
-                    </p>
-                    <p>
-                      <strong>Payment:</strong> {order.paymentMethod} ({order.paymentStatus || "PENDING"})
-                    </p>
-                    <p className="muted-text">
-                      Ordered on {new Date(order.createdAt).toLocaleDateString("en-IN", { dateStyle: "long" })}
-                    </p>
-                    {order.status === "Out for Delivery" && order.deliveryOtp && (
-                      <div className="buyer-order-otp-pill" title="Share this OTP with farmer on delivery">
-                        <span className="otp-pill-icon">🔐</span>
-                        <span>Delivery OTP:</span>
-                        <strong>{order.deliveryOtp}</strong>
-                      </div>
-                    )}
-                  </div>
+            <div className="farmer-orders-container">
+              {filteredOrders.map((order) => {
+                const itemsList = order.items && order.items.length > 0
+                  ? order.items
+                  : [{
+                      id: `legacy-${order.id}`,
+                      productName: order.productName,
+                      productCategory: order.productCategory,
+                      productUnit: order.productUnit,
+                      quantity: order.quantity,
+                      unitPrice: order.unitPrice,
+                      total: order.total,
+                      discountAmount: order.discountAmount,
+                      farmerName: order.farmerName,
+                    }];
 
-                  <div className="order-right">
-                    <strong>₹{Number(order.total).toLocaleString("en-IN")}</strong>
-                    <span className={`status status-${String(order.status).toLowerCase().replaceAll(" ", "-")}`}>
-                      {order.status}
-                    </span>
-                    <Link className="login-btn" to={`/orders/${order.id}/tracking`}>
-                      Track Order →
-                    </Link>
-                    {hasSuccessfulOnlinePayment(order) ? (
-                      <p className="paid-order-cancellation-notice">Paid online (non-cancellable)</p>
-                    ) : ["Awaiting Payment", "Pending", "Accepted"].includes(order.status) && (
-                      <button className="cancel-btn" onClick={() => setCancellingOrderId(order.id)}>
-                        Cancel Order
-                      </button>
-                    )}
-                  </div>
-                </article>
-              ))}
+                const isPaid = String(order.paymentStatus || "").toUpperCase() === "PAID";
+
+                return (
+                  <article className="farmer-order-card" key={order.id}>
+                    {/* Order Top Header */}
+                    <div className="farmer-order-header">
+                      <div>
+                        <div className="farmer-order-title-group">
+                          <h3 className="farmer-order-id">
+                            Order #{order.id}
+                          </h3>
+                          {order.trackingCode && (
+                            <span className="farmer-order-code-badge">
+                              {order.trackingCode}
+                            </span>
+                          )}
+                          <span className={`status status-${String(order.status || "Pending").toLowerCase().replace(/\s+/g, "-")}`}>
+                            {order.status || "Pending"}
+                          </span>
+                        </div>
+                        <p className="farmer-order-date">
+                          Ordered on {order.createdAt ? new Date(order.createdAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "Recently"}
+                        </p>
+                      </div>
+
+                      <div className="farmer-order-price-group">
+                        <div className="farmer-order-total-amount">
+                          ₹{Number(order.total || 0).toLocaleString("en-IN")}
+                        </div>
+                        <span className={`farmer-order-payment-pill ${isPaid ? "is-paid" : "is-pending"}`}>
+                          {order.paymentMethod || "COD"} · {order.paymentStatus || "PENDING"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Delivery & OTP Info */}
+                    <div className="farmer-order-buyer-box">
+                      <div style={{ flex: "1 1 240px" }}>
+                        <strong>Delivering to:</strong> {order.deliveryName || "Me"}{" "}
+                        {order.deliveryPhone && `(${order.deliveryPhone})`} · {order.deliveryAddress}
+                      </div>
+
+                      {order.status === "Out for Delivery" && order.deliveryOtp && (
+                        <div className="buyer-order-otp-pill" style={{ margin: 0 }} title="Share this OTP with driver on delivery">
+                          <span className="otp-pill-icon">🔐</span>
+                          <span>Delivery OTP:</span>
+                          <strong>{order.deliveryOtp}</strong>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Grouped Products Table / List */}
+                    <div className="farmer-order-items-wrapper">
+                      <div className="buyer-order-items-header">
+                        <span>Produce</span>
+                        <span>Product Name</span>
+                        <span>Farmer</span>
+                        <span style={{ textAlign: "center" }}>Qty</span>
+                        <span style={{ textAlign: "right" }}>Unit Price</span>
+                        <span style={{ textAlign: "right" }}>Total</span>
+                      </div>
+
+                      {itemsList.map((item, idx) => (
+                        <div className="buyer-order-item-row" key={item?.id || idx}>
+                          <img
+                            className="farmer-order-item-img"
+                            src={getProductImage(item?.productCategory || "Vegetables", item?.productName || "Produce")}
+                            alt={item?.productName || "Produce"}
+                            onError={(e) => handleImageError(e, item?.productCategory || "Vegetables", item?.productName || "Produce")}
+                          />
+                          <div className="farmer-order-item-info">
+                            <strong>{item?.productName || "Produce"}</strong>
+                            {Number(item?.discountAmount || 0) > 0 && (
+                              <span className="wholesale-badge">
+                                Wholesale {item?.discountPct || 0}% OFF
+                              </span>
+                            )}
+                          </div>
+                          <div className="buyer-order-item-farmer">
+                            <span className="buyer-farmer-badge">
+                              🧑‍🌾 {item?.farmerName || "Farmer"}
+                            </span>
+                          </div>
+                          <div className="farmer-order-item-qty">
+                            {item?.quantity || 1} {item?.productUnit || "kg"}
+                          </div>
+                          <div className="farmer-order-item-unitprice">
+                            ₹{Number(item?.unitPrice || 0).toLocaleString("en-IN")}/{item?.productUnit || "kg"}
+                          </div>
+                          <div className="farmer-order-item-subtotal">
+                            ₹{Number(item?.total || 0).toLocaleString("en-IN")}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Footer Actions */}
+                    <div className="farmer-order-footer">
+                      <div>
+                        {hasSuccessfulOnlinePayment(order) && (
+                          <p className="paid-order-cancellation-notice" style={{ margin: 0 }}>
+                            Paid online (non-cancellable)
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="farmer-order-actions">
+                        <Link className="btn-tracking-view" to={`/orders/${order.id}/tracking`}>
+                          Track Order →
+                        </Link>
+                        {!hasSuccessfulOnlinePayment(order) && ["Awaiting Payment", "Pending", "Accepted"].includes(order.status) && (
+                          <button
+                            className="btn-cancel-order"
+                            onClick={() => setCancellingOrderId(order.id)}
+                          >
+                            Cancel Order
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>

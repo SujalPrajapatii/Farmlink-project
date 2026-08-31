@@ -14,39 +14,52 @@ export const getDashboardData = async (req, res) => {
     `);
 
     const [farmers] = await pool.execute(`
-      SELECT u.id, u.name, u.email, u.created_at AS createdAt,
-        (SELECT COUNT(*) FROM products p WHERE p.farmer_id = u.id) AS productCount,
-        (SELECT COUNT(*) FROM orders o WHERE o.farmer_id = u.id) AS orderCount
+      SELECT u.u_id AS id, u.name, u.email, u.created_at AS createdAt,
+        (SELECT COUNT(*) FROM products p WHERE p.farmer_id = u.u_id) AS productCount,
+        (SELECT COUNT(DISTINCT oi.order_id) FROM order_items oi WHERE oi.farmer_id = u.u_id) AS orderCount
       FROM users u
       WHERE u.account_type = 'farmer'
       ORDER BY u.created_at DESC
     `);
 
     const [businesses] = await pool.execute(`
-      SELECT u.id, u.name, u.email, u.created_at AS createdAt,
-        (SELECT COUNT(*) FROM orders o WHERE o.business_id = u.id) AS orderCount,
-        (SELECT COALESCE(SUM(o.total), 0) FROM orders o WHERE o.business_id = u.id) AS orderValue
+      SELECT u.u_id AS id, u.name, u.email, u.created_at AS createdAt,
+        (SELECT COUNT(*) FROM orders o WHERE o.business_id = u.u_id) AS orderCount,
+        (SELECT COALESCE(SUM(o.total), 0) FROM orders o WHERE o.business_id = u.u_id) AS orderValue
       FROM users u
       WHERE u.account_type = 'business'
       ORDER BY u.created_at DESC
     `);
 
     const [products] = await pool.execute(`
-      SELECT p.id, p.name, p.category, p.quantity, p.unit, p.price, p.location,
+      SELECT p.p_id AS id, p.name, p.category, p.quantity, p.unit, p.price, p.location,
         p.created_at AS createdAt, u.name AS farmerName, u.email AS farmerEmail
       FROM products p
-      JOIN users u ON u.id = p.farmer_id
+      JOIN users u ON u.u_id = p.farmer_id
       ORDER BY p.created_at DESC
     `);
 
     const [orders] = await pool.execute(`
-      SELECT o.id, o.quantity, o.total, o.status, o.payment_method AS paymentMethod,
+      SELECT o.o_id AS id, o.total, o.status, o.payment_method AS paymentMethod,
         o.payment_status AS paymentStatus, o.created_at AS createdAt,
-        p.name AS productName, f.name AS farmerName, b.name AS businessName
+        b.name AS businessName,
+        COALESCE(
+          (SELECT GROUP_CONCAT(p.name SEPARATOR ', ')
+           FROM order_items oi
+           JOIN products p ON p.p_id = oi.product_id
+           WHERE oi.order_id = o.o_id), 'Produce'
+        ) AS productName,
+        COALESCE(
+          (SELECT GROUP_CONCAT(DISTINCT f.name SEPARATOR ', ')
+           FROM order_items oi
+           JOIN users f ON f.u_id = oi.farmer_id
+           WHERE oi.order_id = o.o_id), 'Farmer'
+        ) AS farmerName,
+        COALESCE(
+          (SELECT SUM(oi.quantity) FROM order_items oi WHERE oi.order_id = o.o_id), 0
+        ) AS quantity
       FROM orders o
-      JOIN products p ON p.id = o.product_id
-      JOIN users f ON f.id = o.farmer_id
-      JOIN users b ON b.id = o.business_id
+      JOIN users b ON b.u_id = o.business_id
       ORDER BY o.created_at DESC
     `);
 

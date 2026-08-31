@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
+import { getProductImage, handleImageError } from "../productImages";
 
 const deliverySteps = [
   { status: "Pending", label: "Order placed", icon: "1" },
@@ -87,7 +88,22 @@ function OrderTracking() {
     );
   }
 
-  const { order, events, latestLocation } = trackingData;
+  const { order, items, events, latestLocation } = trackingData;
+  const itemsList = items && items.length > 0
+    ? items
+    : (order.items && order.items.length > 0
+      ? order.items
+      : [{
+          id: `legacy-${order.id}`,
+          productName: order.productName,
+          productCategory: order.productCategory,
+          productUnit: order.productUnit,
+          quantity: order.quantity,
+          unitPrice: order.unitPrice,
+          total: order.total,
+          discountAmount: order.discountAmount,
+          farmerName: order.farmerName,
+        }]);
   const mapLink = latestLocation
     ? `https://www.google.com/maps?q=${latestLocation.latitude},${latestLocation.longitude}`
     : null;
@@ -194,6 +210,70 @@ function OrderTracking() {
             </div>
           </section>
         )}
+
+        {/* Grouped Produce Items in this Order */}
+        <section
+          style={{
+            background: "#fff",
+            border: "1px solid #e2e8f0",
+            borderRadius: "14px",
+            padding: "18px 20px",
+            marginBottom: "24px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.03)",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", borderBottom: "1px solid #f1f5f9", paddingBottom: "10px" }}>
+            <h2 style={{ fontSize: "16px", margin: 0, color: "#166534" }}>
+              🛒 Products in this Order ({itemsList.length})
+            </h2>
+            <strong style={{ fontSize: "16px", color: "#1e293b" }}>
+              Total: ₹{Number(order.total).toLocaleString("en-IN")}
+            </strong>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {itemsList.map((item, idx) => (
+              <div
+                key={item.id || idx}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "14px",
+                  padding: "10px 14px",
+                  background: "#f8fafc",
+                  borderRadius: "10px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <img
+                    src={getProductImage(item.productCategory, item.productName)}
+                    alt={item.productName || "Produce"}
+                    onError={(e) => handleImageError(e, item.productCategory, item.productName)}
+                    style={{ width: "42px", height: "42px", borderRadius: "8px", objectFit: "cover" }}
+                  />
+                  <div>
+                    <strong style={{ fontSize: "15px", color: "#1e293b" }}>{item.productName}</strong>
+                    {item.farmerName && (
+                      <div style={{ fontSize: "12px", color: "#64748b" }}>
+                        Farmer: {item.farmerName}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: "14px", fontWeight: 700, color: "#166534" }}>
+                    ₹{Number(item.total).toLocaleString("en-IN")}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#64748b" }}>
+                    {item.quantity} {item.productUnit || "kg"} @ ₹{Number(item.unitPrice).toLocaleString("en-IN")}/{item.productUnit || "kg"}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
 
         <div className="tracking-grid">
           <section className="tracking-panel tracking-timeline-panel">

@@ -71,7 +71,7 @@ export async function ensureOrderTrackingSchema() {
 
   await pool.execute(`
     CREATE TABLE IF NOT EXISTS order_tracking_events (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      ote_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
       order_id BIGINT UNSIGNED NOT NULL,
       status VARCHAR(60) NOT NULL,
       note VARCHAR(255) NOT NULL,
@@ -82,7 +82,7 @@ export async function ensureOrderTrackingSchema() {
 
   await pool.execute(`
     CREATE TABLE IF NOT EXISTS order_delivery_locations (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      odl_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
       order_id BIGINT UNSIGNED NOT NULL,
       latitude DECIMAL(10, 7) NOT NULL,
       longitude DECIMAL(10, 7) NOT NULL,
@@ -94,7 +94,7 @@ export async function ensureOrderTrackingSchema() {
 
   await pool.execute(`
     CREATE TABLE IF NOT EXISTS order_notifications (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      on_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
       user_id BIGINT UNSIGNED NOT NULL,
       order_id BIGINT UNSIGNED NOT NULL,
       message VARCHAR(500) NOT NULL,
@@ -147,20 +147,44 @@ export async function ensureOrderTrackingSchema() {
       tier2_discount_pct = IF(tier2_discount_pct IS NULL OR tier2_discount_pct = 0, 20, tier2_discount_pct)
   `);
 
-  // Wholesale discount details on orders:
-  const orderDiscountColumns = [
-    ["discount_amount", "DECIMAL(10, 2) NOT NULL DEFAULT 0.00"],
-    ["discount_pct", "INT NOT NULL DEFAULT 0"],
-    ["original_total", "DECIMAL(10, 2) NULL"],
-  ];
-  for (const [column, definition] of orderDiscountColumns) {
-    const [existing] = await pool.execute(
-      `SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'orders' AND column_name = ?`,
-      [column]
-    );
-    if (existing.length === 0) {
-      await pool.execute(`ALTER TABLE orders ADD COLUMN ${column} ${definition}`);
-    }
-  }
+  // Order Items table for grouping multiple items inside one checkout (3NF Normalized):
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS order_items (
+      oi_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      order_id INT NOT NULL,
+      product_id INT NOT NULL,
+      farmer_id INT NOT NULL,
+      quantity DECIMAL(10, 2) NOT NULL,
+      unit_price DECIMAL(10, 2) NOT NULL,
+      discount_amount DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+      discount_pct INT NOT NULL DEFAULT 0,
+      original_total DECIMAL(10, 2) NULL,
+      total DECIMAL(10, 2) NOT NULL,
+      status ENUM(
+        'Awaiting Payment', 'Pending', 'Accepted',
+        'Out for Delivery', 'Delivered', 'Cancelled', 'CANCELLED_BY_BUYER'
+      ) NULL DEFAULT 'Pending',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_order_items_order (order_id),
+      INDEX idx_order_items_farmer (farmer_id),
+      INDEX idx_order_items_product (product_id)
+    ) ENGINE=InnoDB
+  `);
+
+  // Dedicated Payments Table (3NF Normalized):
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS payments (
+      pay_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      order_id INT NOT NULL,
+      amount DECIMAL(12, 2) NOT NULL,
+      payment_method ENUM('COD', 'ONLINE') NOT NULL DEFAULT 'COD',
+      payment_status ENUM('PENDING', 'PAID', 'FAILED', 'REFUNDED') NOT NULL DEFAULT 'PENDING',
+      gateway_order_id VARCHAR(100) NULL,
+      gateway_payment_id VARCHAR(100) NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_payments_order (order_id)
+    ) ENGINE=InnoDB
+  `);
 }
 

@@ -27,14 +27,14 @@ export const createOnlinePayment = async (req, res) => {
 
     const [orders] = await pool.execute(
       `SELECT
-        id,
+        o_id AS id,
         total,
         status,
         payment_method,
         payment_status,
         gateway_order_id
       FROM orders
-      WHERE id = ? AND business_id = ?`,
+      WHERE o_id = ? AND business_id = ?`,
       [orderId, businessId]
     );
 
@@ -89,7 +89,14 @@ export const createOnlinePayment = async (req, res) => {
       await pool.execute(
         `UPDATE orders
          SET gateway_order_id = ?
-         WHERE id = ?`,
+         WHERE o_id = ?`,
+        [razorpayOrderId, order.id]
+      );
+
+      await pool.execute(
+        `UPDATE payments
+         SET gateway_order_id = ?
+         WHERE order_id = ?`,
         [razorpayOrderId, order.id]
       );
     }
@@ -151,13 +158,13 @@ export const verifyOnlinePayment = async (req, res) => {
     // Lock the order so duplicate requests cannot mark it paid twice.
     const [orders] = await connection.execute(
       `SELECT
-        id,
+        o_id AS id,
         status,
         payment_method,
         payment_status,
         gateway_order_id
       FROM orders
-      WHERE id = ? AND business_id = ?
+      WHERE o_id = ? AND business_id = ?
       FOR UPDATE`,
       [orderId, businessId]
     );
@@ -234,8 +241,24 @@ export const verifyOnlinePayment = async (req, res) => {
          payment_status = 'PAID',
          gateway_payment_id = ?,
          status = 'Accepted'
-       WHERE id = ?`,
+       WHERE o_id = ?`,
       [razorpay_payment_id, order.id]
+    );
+
+    await connection.execute(
+      `UPDATE payments
+       SET
+         payment_status = 'PAID',
+         gateway_payment_id = ?
+       WHERE order_id = ?`,
+      [razorpay_payment_id, order.id]
+    );
+
+    await connection.execute(
+      `UPDATE order_items
+       SET status = 'Accepted'
+       WHERE order_id = ? AND status = 'Awaiting Payment'`,
+      [order.id]
     );
 
     await connection.execute(
@@ -326,16 +349,34 @@ export const paymentWebhook = async (req, res) => {
           [razorpayPaymentId, razorpayOrderId]
         );
 
+        await connection.execute(
+          `UPDATE payments
+           SET
+             payment_status = 'PAID',
+             gateway_payment_id = ?
+           WHERE gateway_order_id = ?
+             AND payment_method = 'ONLINE'
+             AND payment_status <> 'PAID'`,
+          [razorpayPaymentId, razorpayOrderId]
+        );
+
         // Add only one tracking event if webhook changed an order.
         if (result.affectedRows > 0) {
           const [orders] = await connection.execute(
-            "SELECT id FROM orders WHERE gateway_order_id = ?",
+            "SELECT o_id AS id FROM orders WHERE gateway_order_id = ?",
             [razorpayOrderId]
           );
 
           const order = orders[0];
 
           if (order) {
+            await connection.execute(
+              `UPDATE order_items
+               SET status = 'Accepted'
+               WHERE order_id = ? AND status = 'Awaiting Payment'`,
+              [order.id]
+            );
+
             await connection.execute(
               `INSERT INTO order_tracking_events (order_id, status, note)
                VALUES (?, ?, ?)`,
