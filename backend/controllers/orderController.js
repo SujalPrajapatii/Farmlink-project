@@ -35,6 +35,73 @@ export const calculateTierPricing = (basePrice, quantity, product = {}) => {
   };
 };
 
+// Calculates dynamic real-time estimated delivery time and transit duration between Farm and Buyer
+export const calculateDeliveryEta = (farmLocation, deliveryAddress, status, inTransitAt, assignedAt, createdAt) => {
+  let distanceKm = 18.5;
+  const f = String(farmLocation || "").toLowerCase();
+  const d = String(deliveryAddress || "").toLowerCase();
+
+  if (f.includes("anand") && d.includes("ahmedabad")) distanceKm = 72.0;
+  else if (f.includes("surat") && d.includes("ahmedabad")) distanceKm = 260.0;
+  else if (f.includes("vadodara") && d.includes("ahmedabad")) distanceKm = 110.0;
+  else if (f.includes("gandhinagar") && d.includes("ahmedabad")) distanceKm = 28.0;
+  else if (f.includes("kheda") && d.includes("ahmedabad")) distanceKm = 38.0;
+  else if (f.includes("sanand") && d.includes("ahmedabad")) distanceKm = 24.0;
+  else if (f.includes("farm") || d.includes("road")) distanceKm = 22.5;
+
+  const totalDurationMinutes = Math.min(Math.max(Math.round(distanceKm * 1.2 + 15), 25), 180);
+
+  let remainingMinutes = totalDurationMinutes;
+  let statusLabel = "Estimated Delivery Time";
+
+  if (status === "Delivered") {
+    remainingMinutes = 0;
+    statusLabel = "Delivered";
+  } else if (status === "Cancelled" || status === "CANCELLED_BY_BUYER") {
+    remainingMinutes = 0;
+    statusLabel = "Cancelled";
+  } else if (status === "Pending") {
+    remainingMinutes = totalDurationMinutes + 15;
+    statusLabel = "Awaiting Farmer Confirmation";
+  } else if (status === "Accepted") {
+    remainingMinutes = totalDurationMinutes + 10;
+    statusLabel = "Waiting for Nearby Rider";
+  } else if (status === "Going to Farmer" || status === "Delivery Boy Assigned") {
+    remainingMinutes = Math.round(totalDurationMinutes * 0.9);
+    statusLabel = "Rider Navigating to Farm";
+  } else if (status === "Reached Farmer") {
+    remainingMinutes = Math.round(totalDurationMinutes * 0.75);
+    statusLabel = "Produce Handover at Farm";
+  } else if (status === "Picked Up" || status === "In Transit" || status === "Out for Delivery") {
+    const elapsedMinutes = inTransitAt
+      ? Math.max(Math.round((Date.now() - new Date(inTransitAt).getTime()) / 60000), 1)
+      : 5;
+    remainingMinutes = Math.max(totalDurationMinutes * 0.6 - elapsedMinutes, 10);
+    statusLabel = status === "Out for Delivery" ? "Out for Delivery - Arriving Soon" : "In Transit to Destination";
+  }
+
+  const arrivalDate = new Date(Date.now() + remainingMinutes * 60000);
+  const arrivalTime = arrivalDate.toLocaleTimeString("en-IN", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+  const durationRange =
+    remainingMinutes > 15
+      ? `${Math.max(remainingMinutes - 5, 10)}–${remainingMinutes + 10} mins`
+      : `${Math.max(remainingMinutes, 5)}–15 mins`;
+
+  return {
+    distanceKm: `${distanceKm.toFixed(1)} km`,
+    totalDurationMinutes,
+    remainingMinutes: Math.round(remainingMinutes),
+    estimatedDurationText: durationRange,
+    estimatedArrivalTime: `Today by ${arrivalTime}`,
+    statusLabel,
+  };
+};
+
 // Business buyer creates an order for a single product (Buy Now flow)
 export const placeOrder = async (req, res) => {
   let connection;
@@ -392,12 +459,24 @@ export const getMyOrders = async (req, res) => {
            o.delivery_name AS deliveryName,
            o.delivery_phone AS deliveryPhone,
            o.delivery_address AS deliveryAddress,
+           o.delivery_boy_id AS deliveryBoyId,
+           d.name AS deliveryBoyName,
+           d.phone AS deliveryBoyPhone,
+           d.vehicle_type AS deliveryBoyVehicle,
+           d.vehicle_number AS deliveryBoyVehicleNumber,
+           d.availability_status AS deliveryBoyStatus,
+           o.assigned_at AS assignedAt,
+           o.picked_up_at AS pickedUpAt,
+           o.in_transit_at AS inTransitAt,
+           o.out_for_delivery_at AS outForDeliveryAt,
+           o.delivered_at AS deliveredAt,
            o.created_at AS createdAt,
            b.name AS businessName,
            b.email AS businessEmail
          FROM orders o
          JOIN order_items oi ON oi.order_id = o.o_id
          JOIN users b ON o.business_id = b.u_id
+         LEFT JOIN users d ON d.u_id = o.delivery_boy_id
          WHERE oi.farmer_id = ? AND o.status NOT IN ('Cancelled', 'CANCELLED_BY_BUYER')
          ORDER BY o.created_at DESC, o.o_id DESC`,
         [userId]
@@ -458,6 +537,17 @@ export const getMyOrders = async (req, res) => {
           deliveryName: order.deliveryName,
           deliveryPhone: order.deliveryPhone,
           deliveryAddress: order.deliveryAddress,
+          deliveryBoyId: order.deliveryBoyId,
+          deliveryBoyName: order.deliveryBoyName,
+          deliveryBoyPhone: order.deliveryBoyPhone,
+          deliveryBoyVehicle: order.deliveryBoyVehicle,
+          deliveryBoyVehicleNumber: order.deliveryBoyVehicleNumber,
+          deliveryBoyStatus: order.deliveryBoyStatus,
+          assignedAt: order.assignedAt,
+          pickedUpAt: order.pickedUpAt,
+          inTransitAt: order.inTransitAt,
+          outForDeliveryAt: order.outForDeliveryAt,
+          deliveredAt: order.deliveredAt,
           createdAt: order.createdAt,
           businessName: order.businessName,
           businessEmail: order.businessEmail,
@@ -466,6 +556,14 @@ export const getMyOrders = async (req, res) => {
           discountAmount: Math.round(farmerDiscount * 100) / 100,
           originalTotal: Math.round(farmerOriginalTotal * 100) / 100,
           quantity: farmerTotalQty,
+          deliveryEta: calculateDeliveryEta(
+            orderItems[0]?.farmLocation || "Gujarat Farm",
+            order.deliveryAddress,
+            order.status,
+            order.inTransitAt,
+            order.assignedAt,
+            order.createdAt
+          ),
           // Legacy fields for backward compatibility
           productName: orderItems.map((i) => i.productName).join(", "),
           productCategory: orderItems[0]?.productCategory || "Produce",
@@ -488,8 +586,20 @@ export const getMyOrders = async (req, res) => {
            o.delivery_name AS deliveryName,
            o.delivery_phone AS deliveryPhone,
            o.delivery_address AS deliveryAddress,
+           o.delivery_boy_id AS deliveryBoyId,
+           d.name AS deliveryBoyName,
+           d.phone AS deliveryBoyPhone,
+           d.vehicle_type AS deliveryBoyVehicle,
+           d.vehicle_number AS deliveryBoyVehicleNumber,
+           d.availability_status AS deliveryBoyStatus,
+           o.assigned_at AS assignedAt,
+           o.picked_up_at AS pickedUpAt,
+           o.in_transit_at AS inTransitAt,
+           o.out_for_delivery_at AS outForDeliveryAt,
+           o.delivered_at AS deliveredAt,
            o.created_at AS createdAt
          FROM orders o
+         LEFT JOIN users d ON d.u_id = o.delivery_boy_id
          WHERE o.business_id = ? AND o.status NOT IN ('Cancelled', 'CANCELLED_BY_BUYER')
          ORDER BY o.created_at DESC, o.o_id DESC`,
         [userId]
@@ -518,6 +628,7 @@ export const getMyOrders = async (req, res) => {
            p.name AS productName,
            p.category AS productCategory,
            p.unit AS productUnit,
+           p.location AS farmLocation,
            p.image_url AS productImage,
            f.name AS farmerName
          FROM order_items oi
@@ -557,9 +668,28 @@ export const getMyOrders = async (req, res) => {
           deliveryName: order.deliveryName,
           deliveryPhone: order.deliveryPhone,
           deliveryAddress: order.deliveryAddress,
+          deliveryBoyId: order.deliveryBoyId,
+          deliveryBoyName: order.deliveryBoyName,
+          deliveryBoyPhone: order.deliveryBoyPhone,
+          deliveryBoyVehicle: order.deliveryBoyVehicle,
+          deliveryBoyVehicleNumber: order.deliveryBoyVehicleNumber,
+          deliveryBoyStatus: order.deliveryBoyStatus,
+          assignedAt: order.assignedAt,
+          pickedUpAt: order.pickedUpAt,
+          inTransitAt: order.inTransitAt,
+          outForDeliveryAt: order.outForDeliveryAt,
+          deliveredAt: order.deliveredAt,
           createdAt: order.createdAt,
           items: orderItems,
           quantity: totalQty,
+          deliveryEta: calculateDeliveryEta(
+            orderItems[0]?.farmLocation || "Gujarat Farm",
+            order.deliveryAddress,
+            order.status,
+            order.inTransitAt,
+            order.assignedAt,
+            order.createdAt
+          ),
           // Legacy fields for backward compatibility
           farmerName: farmersList || "Farmer",
           productName: orderItems.map((i) => i.productName).join(", "),
@@ -627,7 +757,7 @@ export const getOrderSummary = async (req, res) => {
   }
 };
 
-// Returns tracking timeline to the farmer or buyer who owns the order
+// Returns tracking timeline to the farmer, buyer, rider, or admin who owns/manages the order
 export const getOrderTracking = async (req, res) => {
   try {
     const orderId = Number(req.params.id);
@@ -656,6 +786,20 @@ export const getOrderTracking = async (req, res) => {
         LIMIT 1
       `;
       ownershipCheckParams = [orderId, userId];
+    } else if (accountType === "delivery") {
+      ownershipCheckQuery = `
+        SELECT o.o_id AS id FROM orders o
+        WHERE o.o_id = ? AND o.delivery_boy_id = ?
+        LIMIT 1
+      `;
+      ownershipCheckParams = [orderId, userId];
+    } else if (accountType === "admin") {
+      ownershipCheckQuery = `
+        SELECT o.o_id AS id FROM orders o
+        WHERE o.o_id = ?
+        LIMIT 1
+      `;
+      ownershipCheckParams = [orderId];
     } else {
       return res.status(403).json({ message: "You cannot view this order." });
     }
@@ -665,7 +809,7 @@ export const getOrderTracking = async (req, res) => {
       return res.status(404).json({ message: "Order not found." });
     }
 
-    // Get order record
+    // Get order record with delivery rider details
     const [orders] = await pool.execute(
       `SELECT
          o.o_id AS id,
@@ -678,14 +822,31 @@ export const getOrderTracking = async (req, res) => {
          o.delivery_phone AS deliveryPhone,
          o.delivery_address AS deliveryAddress,
          o.delivery_otp AS deliveryOtp,
-         o.created_at AS createdAt
+         o.delivery_boy_id AS deliveryBoyId,
+         o.delivery_notes AS deliveryNotes,
+         o.assigned_at AS assignedAt,
+         o.reached_farmer_at AS reachedFarmerAt,
+         o.picked_up_at AS pickedUpAt,
+         o.in_transit_at AS inTransitAt,
+         o.out_for_delivery_at AS outForDeliveryAt,
+         o.delivered_at AS deliveredAt,
+         o.created_at AS createdAt,
+         d.name AS deliveryBoyName,
+         d.phone AS deliveryBoyPhone,
+         d.vehicle_type AS deliveryBoyVehicle,
+         d.vehicle_number AS deliveryBoyVehicleNumber,
+         d.availability_status AS deliveryBoyStatus,
+         d.current_latitude AS deliveryBoyLat,
+         d.current_longitude AS deliveryBoyLng,
+         d.last_location_time AS deliveryBoyLastLocationTime
        FROM orders o
+       LEFT JOIN users d ON d.u_id = o.delivery_boy_id
        WHERE o.o_id = ?`,
       [orderId]
     );
     const order = orders[0];
 
-    // Fetch items for this order (filtered by farmer if farmer, or all items if buyer)
+    // Fetch items for this order
     let itemsQuery;
     let itemsParams;
     if (accountType === "farmer") {
@@ -721,7 +882,8 @@ export const getOrderTracking = async (req, res) => {
           p.unit AS productUnit,
           p.location AS farmLocation,
           p.image_url AS productImage,
-          f.name AS farmerName
+          f.name AS farmerName,
+          f.phone AS farmerPhone
         FROM order_items oi
         JOIN products p ON oi.product_id = p.p_id
         JOIN users f ON oi.farmer_id = f.u_id
@@ -739,8 +901,31 @@ export const getOrderTracking = async (req, res) => {
     order.productUnit = items[0]?.productUnit || "kg";
     order.farmLocation = items[0]?.farmLocation || "";
     order.quantity = items.reduce((sum, i) => sum + Number(i.quantity || 0), 0);
+    order.deliveryEta = calculateDeliveryEta(
+      order.farmLocation || "Gujarat Farm",
+      order.deliveryAddress,
+      order.status,
+      order.inTransitAt,
+      order.assignedAt,
+      order.createdAt
+    );
 
-    if (accountType === "business") {
+    // Delivery boy object
+    const deliveryBoy = order.deliveryBoyId
+      ? {
+          id: order.deliveryBoyId,
+          name: order.deliveryBoyName,
+          phone: order.deliveryBoyPhone || "",
+          vehicleType: order.deliveryBoyVehicle || "Bike",
+          vehicleNumber: order.deliveryBoyVehicleNumber || "",
+          status: order.deliveryBoyStatus || "AVAILABLE",
+          currentLatitude: order.deliveryBoyLat || null,
+          currentLongitude: order.deliveryBoyLng || null,
+          lastLocationTime: order.deliveryBoyLastLocationTime || null,
+        }
+      : null;
+
+    if (accountType === "business" || accountType === "admin") {
       if (order.status === "Out for Delivery" && !order.deliveryOtp) {
         const generatedOtp = String(Math.floor(1000 + Math.random() * 9000));
         await pool.execute("UPDATE orders SET delivery_otp = ? WHERE o_id = ?", [generatedOtp, order.id]);
@@ -759,18 +944,32 @@ export const getOrderTracking = async (req, res) => {
     );
 
     const [locations] = await pool.execute(
-      `SELECT odl_id AS id, latitude, longitude, note, created_at AS createdAt
+      `SELECT odl_id AS id, delivery_boy_id AS deliveryBoyId, latitude, longitude, speed, heading, accuracy, note, created_at AS createdAt
        FROM order_delivery_locations
        WHERE order_id = ?
        ORDER BY created_at DESC`,
       [orderId]
     );
 
+    // If locations table is empty but delivery boy has current coords, supply delivery boy location
+    const latestLocation =
+      locations[0] ||
+      (deliveryBoy?.currentLatitude && deliveryBoy?.currentLongitude
+        ? {
+            id: "live-rider",
+            latitude: Number(deliveryBoy.currentLatitude),
+            longitude: Number(deliveryBoy.currentLongitude),
+            note: `${deliveryBoy.name} is on the way.`,
+            createdAt: deliveryBoy.lastLocationTime || new Date().toISOString(),
+          }
+        : null);
+
     return res.json({
       order,
       items,
+      deliveryBoy,
       events,
-      latestLocation: locations[0] || null,
+      latestLocation,
       locations,
     });
   } catch (error) {
@@ -804,7 +1003,7 @@ export const updateOrderStatus = async (req, res) => {
 
     // Check order and verify farmer has items in this order
     const [orders] = await connection.execute(
-      `SELECT o.o_id AS id, o.business_id, o.status, o.payment_method, o.payment_status, o.delivery_otp
+      `SELECT o.o_id AS id, o.business_id, o.status, o.payment_method, o.payment_status, o.delivery_otp, o.delivery_boy_id
        FROM orders o
        JOIN order_items oi ON oi.order_id = o.o_id
        WHERE o.o_id = ? AND oi.farmer_id = ?
@@ -821,6 +1020,7 @@ export const updateOrderStatus = async (req, res) => {
     const allowedChanges = {
       Pending: ["Accepted", "Cancelled"],
       Accepted: ["Out for Delivery", "Cancelled"],
+      "Delivery Boy Assigned": ["Cancelled"],
       "Out for Delivery": ["Delivered"],
     };
 
@@ -970,7 +1170,7 @@ export const cancelOrder = async (req, res) => {
 
     // Fetch order
     const [orders] = await connection.execute(
-      `SELECT o.o_id AS id, o.business_id, o.status, o.payment_method, o.payment_status,
+      `SELECT o.o_id AS id, o.business_id, o.delivery_boy_id, o.status, o.payment_method, o.payment_status,
               b.name AS buyerName
        FROM orders o
        JOIN users b ON b.u_id = o.business_id
@@ -997,13 +1197,13 @@ export const cancelOrder = async (req, res) => {
     }
 
     const allowedStatuses = accountType === "farmer"
-      ? ["Pending", "Accepted"]
-      : ["Awaiting Payment", "Pending", "Accepted"];
+      ? ["Pending", "Accepted", "Delivery Boy Assigned"]
+      : ["Awaiting Payment", "Pending", "Accepted", "Delivery Boy Assigned"];
 
     if (!allowedStatuses.includes(order.status)) {
       await connection.rollback();
       return res.status(400).json({
-        message: "This order can no longer be cancelled because delivery has started or it is already complete.",
+        message: "This order can no longer be cancelled because pickup or delivery has started.",
       });
     }
 
@@ -1105,6 +1305,16 @@ export const cancelOrder = async (req, res) => {
       );
     }
 
+    // If a delivery rider was assigned, notify rider as well
+    if (order.delivery_boy_id) {
+      await connection.execute(
+        `INSERT INTO order_notifications (user_id, order_id, type, title, message)
+         VALUES (?, ?, 'ORDER_CANCELLED_RIDER', 'Order Cancelled', ?)
+         ON DUPLICATE KEY UPDATE message = VALUES(message), is_read = FALSE, created_at = CURRENT_TIMESTAMP`,
+        [order.delivery_boy_id, orderId, `Order #${orderId} has been cancelled by the ${actor}.`]
+      );
+    }
+
     await connection.commit();
     transactionStarted = false;
 
@@ -1123,7 +1333,7 @@ export const getOrderNotifications = async (req, res) => {
     const [notifications] = await pool.execute(
       `SELECT on_id AS id, order_id AS orderId, type, title, message,
               is_read AS isRead, created_at AS createdAt
-       FROM order_notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 20`,
+       FROM order_notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
       [req.user.id]
     );
     return res.json(notifications);
@@ -1153,6 +1363,19 @@ export const markOrderNotificationRead = async (req, res) => {
   }
 };
 
+export const markAllNotificationsRead = async (req, res) => {
+  try {
+    await pool.execute(
+      "UPDATE order_notifications SET is_read = TRUE WHERE user_id = ?",
+      [req.user.id]
+    );
+    return res.json({ message: "All notifications marked as read." });
+  } catch (error) {
+    console.error("Mark all notifications read error:", error);
+    return res.status(500).json({ message: "Could not mark notifications as read." });
+  }
+};
+
 export const deleteOrderNotification = async (req, res) => {
   try {
     const notificationId = Number(req.params.notificationId);
@@ -1170,6 +1393,19 @@ export const deleteOrderNotification = async (req, res) => {
   } catch (error) {
     console.error("Delete notification error:", error);
     return res.status(500).json({ message: "Could not delete notification." });
+  }
+};
+
+export const clearAllNotifications = async (req, res) => {
+  try {
+    await pool.execute(
+      "DELETE FROM order_notifications WHERE user_id = ?",
+      [req.user.id]
+    );
+    return res.json({ message: "All notifications cleared successfully." });
+  } catch (error) {
+    console.error("Clear all notifications error:", error);
+    return res.status(500).json({ message: "Could not clear notifications." });
   }
 };
 

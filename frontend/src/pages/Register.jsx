@@ -10,6 +10,9 @@ function Register() {
     name: "",
     email: "",
     accountType: "",
+    phone: "",
+    vehicleType: "Bike",
+    vehicleNumber: "",
     password: "",
   });
 
@@ -41,6 +44,8 @@ function Register() {
     
       if (result.user.accountType === "farmer") {
         navigate("/farmer-dashboard");
+      } else if (result.user.accountType === "delivery") {
+        navigate("/delivery-dashboard");
       } else {
         navigate("/business-dashboard");
       }
@@ -58,15 +63,66 @@ function Register() {
             <div className="auth-brand-copy">
               <span className="auth-leaf">✦</span>
               <h2>Your harvest.<br />A bigger market.</h2>
-              <p>Join a trusted network built for simple, transparent agricultural trade.</p>
+              <p>Join a trusted network built for simple, transparent agricultural trade and reliable delivery.</p>
             </div>
-            <span className="auth-brand-caption">GROW · CONNECT · PROSPER</span>
+            <span className="auth-brand-caption">GROW · CONNECT · DELIVER</span>
           </div>
         </section>
         <form className="auth-card auth-showcase-form" onSubmit={handleSubmit}>
           <Link className="back-link" to="/">← Back to FarmLink</Link>
           <div className="auth-form-heading"><span>JOIN FARMLINK</span><h1>Create your account</h1><p>Tell us a little about yourself to get started.</p></div>
-          <div className="auth-two-fields"><div><label>Full Name</label><input type="text" name="name" value={formData.name} onChange={handleChange} placeholder="Your full name" required /></div><div><label>Account Type</label><select name="accountType" value={formData.accountType} onChange={handleChange} required><option value="">Choose role</option><option value="farmer">Farmer</option><option value="business">Business Buyer</option></select></div></div>
+          <div className="auth-two-fields">
+            <div>
+              <label>Full Name</label>
+              <input type="text" name="name" value={formData.name} onChange={handleChange} placeholder="Your full name" required />
+            </div>
+            <div>
+              <label>Account Type</label>
+              <select name="accountType" value={formData.accountType} onChange={handleChange} required>
+                <option value="">Choose role</option>
+                <option value="farmer">Farmer</option>
+                <option value="business">Business Buyer</option>
+                <option value="delivery">Delivery Rider / Partner</option>
+              </select>
+            </div>
+          </div>
+
+          {formData.accountType === "delivery" && (
+            <>
+              <div className="auth-two-fields">
+                <div>
+                  <label>Phone Number (for Delivery)</label>
+                  <input
+                    type="tel"
+                    name="phone"
+                    value={formData.phone}
+                    onChange={handleChange}
+                    placeholder="+91 98765 43210"
+                    required
+                  />
+                </div>
+                <div>
+                  <label>Vehicle Type</label>
+                  <select name="vehicleType" value={formData.vehicleType} onChange={handleChange} required>
+                    <option value="Motorcycle / Bike">Motorcycle / Bike</option>
+                    <option value="Scooter">Scooter</option>
+                    <option value="Electric Scooter">Electric Scooter</option>
+                    <option value="Delivery Van / Mini Truck">Delivery Van / Mini Truck</option>
+                    <option value="Bicycle">Bicycle</option>
+                  </select>
+                </div>
+              </div>
+              <label>Vehicle Registration Number (Optional)</label>
+              <input
+                type="text"
+                name="vehicleNumber"
+                value={formData.vehicleNumber}
+                onChange={handleChange}
+                placeholder="e.g. GJ-01-AB-1234"
+              />
+            </>
+          )}
+
           <label>Email Address</label>
           <input type="email" name="email" value={formData.email} onChange={handleChange} placeholder="name@example.com" required />
           <label>Password</label>

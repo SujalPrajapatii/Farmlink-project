@@ -156,17 +156,17 @@ function BuyerOrders() {
     <div className="dashboard-page">
       <aside className="sidebar">
         <h2>🌱 FarmLink</h2>
-        <Link to="/">Home</Link>
-        <Link to="/business-dashboard">Marketplace</Link>
-        <Link to="/my-orders" style={{ background: "rgba(255,255,255,0.22)", color: "#fff", fontWeight: "800" }}>
-          My Orders {orders.length > 0 && `(${orders.length})`}
+        <Link to="/" className="sidebar-nav-item">🏠 Home</Link>
+        <Link to="/business-dashboard" className="sidebar-nav-item">🌾 Marketplace</Link>
+        <Link to="/my-orders" className="sidebar-nav-item is-active">
+          📦 My Orders {orders.length > 0 && <span className="nav-count-badge">{orders.length}</span>}
         </Link>
-        <button className="sidebar-cart" onClick={() => navigate("/checkout", { state: { cart } })}>
-          🛒 Cart ({cart.length})
+        <button type="button" className="sidebar-nav-item" onClick={() => navigate("/checkout", { state: { cart } })}>
+          🛒 Cart {cart.length > 0 && <span className="nav-count-badge">{cart.length}</span>}
         </button>
-        <button className="sidebar-cart" onClick={() => setNotificationsOpen((isOpen) => !isOpen)}>
-          🔔 Notifications{unreadNotificationCount ? ` (${unreadNotificationCount})` : ""}
-        </button>
+        <Link to="/notifications" className="sidebar-nav-item">
+          🔔 Notifications {unreadNotificationCount > 0 && <span className="nav-count-badge alert">{unreadNotificationCount}</span>}
+        </Link>
         <button className="sidebar-logout" onClick={handleLogout}>
           Logout
         </button>
@@ -332,12 +332,30 @@ function BuyerOrders() {
                       </div>
                     </div>
 
-                    {/* Delivery & OTP Info */}
+                    {/* Delivery, Rider & OTP Info */}
                     <div className="farmer-order-buyer-box">
                       <div style={{ flex: "1 1 240px" }}>
                         <strong>Delivering to:</strong> {order.deliveryName || "Me"}{" "}
                         {order.deliveryPhone && `(${order.deliveryPhone})`} · {order.deliveryAddress}
                       </div>
+
+                      {order.deliveryBoyName && (
+                        <div className="buyer-order-rider-badge">
+                          <span className="rider-icon">🛵</span>
+                          <span>Rider: <strong>{order.deliveryBoyName}</strong> {order.deliveryBoyPhone ? `(${order.deliveryBoyPhone})` : ""}</span>
+                          {order.deliveryBoyVehicle && <small className="muted-text"> · {order.deliveryBoyVehicle}</small>}
+                        </div>
+                      )}
+
+                      {order.deliveryEta && !["Delivered", "Cancelled", "CANCELLED_BY_BUYER"].includes(order.status) && (
+                        <div className="order-eta-pill">
+                          <span className="eta-icon">⏱️</span>
+                          <span className="eta-text">
+                            Est. Delivery: <strong>{order.deliveryEta.estimatedDurationText}</strong> ({order.deliveryEta.estimatedArrivalTime})
+                          </span>
+                          <span className="eta-dist">· {order.deliveryEta.distanceKm}</span>
+                        </div>
+                      )}
 
                       {order.status === "Out for Delivery" && order.deliveryOtp && (
                         <div className="buyer-order-otp-pill" style={{ margin: 0 }} title="Share this OTP with driver on delivery">

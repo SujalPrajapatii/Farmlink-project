@@ -12,19 +12,23 @@ import {
   cancelOrder,
   getOrderNotifications,
   markOrderNotificationRead,
+  markAllNotificationsRead,
   deleteOrderNotification,
+  clearAllNotifications,
   addDeliveryLocation,
 } from "../controllers/orderController.js";
 
 const router = express.Router();
 
 router.get("/mine", authMiddleware, getMyOrders);
-
 router.get("/summary", authMiddleware, getOrderSummary);
 
+// Notification endpoints
 router.get("/notifications", authMiddleware, getOrderNotifications);
-router.patch("/notifications/:notificationId/read", authMiddleware, allowRoles("farmer", "business"), markOrderNotificationRead);
-router.delete("/notifications/:notificationId", authMiddleware, allowRoles("farmer", "business"), deleteOrderNotification);
+router.patch("/notifications/read-all", authMiddleware, markAllNotificationsRead);
+router.delete("/notifications/all", authMiddleware, clearAllNotifications);
+router.patch("/notifications/:notificationId/read", authMiddleware, markOrderNotificationRead);
+router.delete("/notifications/:notificationId", authMiddleware, deleteOrderNotification);
 
 router.get("/:id/tracking", authMiddleware, getOrderTracking);
 
@@ -53,14 +57,14 @@ router.post(
 router.post(
   "/:id/cancel",
   authMiddleware,
-  allowRoles("farmer", "business"),
+  allowRoles("farmer", "business", "admin"),
   cancelOrder
 );
 
 router.post(
   "/:id/location",
   authMiddleware,
-  allowRoles("farmer"),
+  allowRoles("farmer", "delivery"),
   addDeliveryLocation
 );
 

@@ -19,10 +19,10 @@ const createToken = (user) => {
   );
 };
 
-// Register new farmer or business user
+// Register new farmer, business, or delivery user
 export const register = async (req, res) => {
   try {
-    const { name, email, password, accountType } = req.body;
+    const { name, email, password, accountType, phone, vehicleType, vehicleNumber } = req.body;
 
     // Check form fields
     if (!name || !email || !password || !accountType) {
@@ -31,10 +31,15 @@ export const register = async (req, res) => {
       });
     }
 
+    const normalizedRole =
+      accountType === "delivery_boy" || accountType === "delivery"
+        ? "delivery"
+        : accountType;
+
     // Only these account types can register publicly
-    if (accountType !== "farmer" && accountType !== "business") {
+    if (normalizedRole !== "farmer" && normalizedRole !== "business" && normalizedRole !== "delivery") {
       return res.status(400).json({
-        message: "Account type must be farmer or business.",
+        message: "Account type must be farmer, business, or delivery.",
       });
     }
 
@@ -62,15 +67,22 @@ export const register = async (req, res) => {
     // Encrypt password before saving it
     const passwordHash = await bcrypt.hash(password, 12);
 
+    const cleanPhone = typeof phone === "string" ? phone.trim() : null;
+    const cleanVehicleType = typeof vehicleType === "string" ? vehicleType.trim() : "Bike";
+    const cleanVehicleNumber = typeof vehicleNumber === "string" ? vehicleNumber.trim().toUpperCase() : null;
+
     // Save new user in MySQL
     const [result] = await pool.execute(
-      `INSERT INTO users (name, email, password_hash, account_type)
-       VALUES (?, ?, ?, ?)`,
+      `INSERT INTO users (name, email, password_hash, account_type, phone, vehicle_type, vehicle_number, availability_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'AVAILABLE')`,
       [
         name.trim(),
         cleanEmail,
         passwordHash,
-        accountType,
+        normalizedRole,
+        cleanPhone,
+        cleanVehicleType,
+        cleanVehicleNumber,
       ]
     );
 
@@ -79,7 +91,11 @@ export const register = async (req, res) => {
       id: result.insertId,
       name: name.trim(),
       email: cleanEmail,
-      account_type: accountType,
+      account_type: normalizedRole,
+      phone: cleanPhone,
+      vehicle_type: cleanVehicleType,
+      vehicle_number: cleanVehicleNumber,
+      availability_status: "AVAILABLE",
     };
 
     const token = createToken(user);
@@ -93,6 +109,10 @@ export const register = async (req, res) => {
         name: user.name,
         email: user.email,
         accountType: user.account_type,
+        phone: user.phone,
+        vehicleType: user.vehicle_type,
+        vehicleNumber: user.vehicle_number,
+        availabilityStatus: user.availability_status,
       },
     });
   } catch (error) {
@@ -119,7 +139,11 @@ export const login = async (req, res) => {
 
     // Find user in MySQL
     const [users] = await pool.execute(
-      "SELECT u_id AS id, name, email, password_hash, account_type FROM users WHERE email = ?",
+      `SELECT u_id AS id, name, email, password_hash, account_type,
+              phone, vehicle_type AS vehicleType, vehicle_number AS vehicleNumber,
+              availability_status AS availabilityStatus,
+              current_latitude AS currentLatitude, current_longitude AS currentLongitude
+       FROM users WHERE email = ?`,
       [cleanEmail]
     );
 
@@ -144,7 +168,10 @@ export const login = async (req, res) => {
       });
     }
 
-    const token = createToken(user);
+    const token = createToken({
+      id: user.id,
+      account_type: user.account_type,
+    });
 
     res.json({
       message: "Login successful.",
@@ -154,6 +181,12 @@ export const login = async (req, res) => {
         name: user.name,
         email: user.email,
         accountType: user.account_type,
+        phone: user.phone || "",
+        vehicleType: user.vehicleType || "Bike",
+        vehicleNumber: user.vehicleNumber || "",
+        availabilityStatus: user.availabilityStatus || "AVAILABLE",
+        currentLatitude: user.currentLatitude || null,
+        currentLongitude: user.currentLongitude || null,
       },
     });
   } catch (error) {
@@ -162,5 +195,88 @@ export const login = async (req, res) => {
     res.status(500).json({
       message: "Could not log in.",
     });
+  }
+};
+
+// Get current logged in user profile
+export const getProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const [users] = await pool.execute(
+      `SELECT u_id AS id, name, email, account_type AS accountType,
+              phone, vehicle_type AS vehicleType, vehicle_number AS vehicleNumber,
+              availability_status AS availabilityStatus,
+              current_latitude AS currentLatitude, current_longitude AS currentLongitude,
+              created_at AS createdAt
+       FROM users WHERE u_id = ?`,
+      [userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    res.json(users[0]);
+  } catch (error) {
+    console.error("Get profile error:", error);
+    res.status(500).json({ message: "Could not load profile." });
+  }
+};
+
+// Update user profile (phone, vehicle, name)
+export const updateProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { name, phone, vehicleType, vehicleNumber, availabilityStatus } = req.body;
+
+    const updates = [];
+    const params = [];
+
+    if (typeof name === "string" && name.trim()) {
+      updates.push("name = ?");
+      params.push(name.trim());
+    }
+    if (typeof phone === "string") {
+      updates.push("phone = ?");
+      params.push(phone.trim());
+    }
+    if (typeof vehicleType === "string") {
+      updates.push("vehicle_type = ?");
+      params.push(vehicleType.trim());
+    }
+    if (typeof vehicleNumber === "string") {
+      updates.push("vehicle_number = ?");
+      params.push(vehicleNumber.trim().toUpperCase());
+    }
+    if (["AVAILABLE", "BUSY", "OFFLINE"].includes(availabilityStatus)) {
+      updates.push("availability_status = ?");
+      params.push(availabilityStatus);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ message: "No valid profile fields provided." });
+    }
+
+    params.push(userId);
+    await pool.execute(
+      `UPDATE users SET ${updates.join(", ")} WHERE u_id = ?`,
+      params
+    );
+
+    const [users] = await pool.execute(
+      `SELECT u_id AS id, name, email, account_type AS accountType,
+              phone, vehicle_type AS vehicleType, vehicle_number AS vehicleNumber,
+              availability_status AS availabilityStatus
+       FROM users WHERE u_id = ?`,
+      [userId]
+    );
+
+    res.json({
+      message: "Profile updated successfully.",
+      user: users[0],
+    });
+  } catch (error) {
+    console.error("Update profile error:", error);
+    res.status(500).json({ message: "Could not update profile." });
   }
 };

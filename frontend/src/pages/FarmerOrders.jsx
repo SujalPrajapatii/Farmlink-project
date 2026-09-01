@@ -1,224 +1,93 @@
-import { api } from "../api";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { api } from "../api";
 import CancellationModal from "../components/CancellationModal";
-import DeliveryOtpModal from "../components/DeliveryOtpModal";
 import { getProductImage, handleImageError } from "../productImages";
 
 function hasSuccessfulOnlinePayment(order) {
-  const paymentStatus = String(order.paymentStatus || "").toUpperCase();
-  return order.paymentMethod === "ONLINE" && ["PAID", "SUCCESS"].includes(paymentStatus);
+  if (!order || order.paymentMethod !== "ONLINE") return false;
+  const status = String(order.paymentStatus || "").toUpperCase();
+  return status === "PAID" || status === "SUCCESS";
 }
 
 function FarmerOrders() {
   const navigate = useNavigate();
-
   const currentUser = JSON.parse(
     localStorage.getItem("farmlinkCurrentUser") || "null"
   );
-
   const accountType = currentUser?.accountType;
 
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [error, setError] = useState("");
   const [notifications, setNotifications] = useState([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("all");
+
   const [cancellingOrderId, setCancellingOrderId] = useState(null);
   const [isCancelling, setIsCancelling] = useState(false);
-  const [deliveringOrder, setDeliveringOrder] = useState(null);
-  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
-  const locationWatchRef = useRef(null);
-  const lastLocationSentRef = useRef(0);
+
+  const loadNotifications = useCallback(async () => {
+    try {
+      const data = await api("/orders/notifications");
+      setNotifications(Array.isArray(data) ? data : []);
+    } catch {
+      // Keep notifications resilient
+    }
+  }, []);
+
+  const loadOrders = useCallback(async (isSilent = false) => {
+    try {
+      if (!isSilent) setLoading(true);
+      setError("");
+      const data = await api("/orders/mine");
+      setOrders(Array.isArray(data) ? data : []);
+      await loadNotifications();
+    } catch (requestError) {
+      if (!isSilent) setError(requestError.message);
+    } finally {
+      if (!isSilent) setLoading(false);
+    }
+  }, [loadNotifications]);
 
   useEffect(() => {
-    if (accountType !== "farmer") return;
-
-    let active = true;
-    let firstLoad = true;
-
-    async function loadOrdersData() {
-      try {
-        if (firstLoad) setLoading(true);
-        const [ordersData, notificationsData] = await Promise.all([
-          api("/orders/mine"),
-          api("/orders/notifications"),
-        ]);
-
-        if (!active) return;
-        setOrders(Array.isArray(ordersData) ? ordersData : []);
-        setNotifications(Array.isArray(notificationsData) ? notificationsData : []);
-      } catch (error) {
-        if (firstLoad && active) {
-          console.error("Error loading orders data:", error);
-        }
-      } finally {
-        if (active) setLoading(false);
-        firstLoad = false;
-      }
+    if (accountType === "farmer") {
+      loadOrders();
+      const interval = setInterval(() => loadOrders(true), 6000);
+      return () => clearInterval(interval);
     }
-
-    loadOrdersData();
-    window.addEventListener("focus", loadOrdersData);
-    const refreshId = window.setInterval(loadOrdersData, 5000);
-
-    return () => {
-      active = false;
-      window.removeEventListener("focus", loadOrdersData);
-      window.clearInterval(refreshId);
-    };
-  }, [accountType]);
-
-  if (!currentUser || accountType !== "farmer") {
-    return (
-      <div className="auth-page">
-        <div className="auth-card">
-          <h1>Access denied</h1>
-          <p>Please log in as a farmer to view received orders.</p>
-          <Link className="farmer-btn" to="/login">
-            Go to Login
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  const safeOrders = Array.isArray(orders) ? orders : [];
-  const safeNotifications = Array.isArray(notifications) ? notifications : [];
-
-  const ordersToShip = safeOrders.filter((order) => order && order.status === "Accepted");
-  const pendingOrders = safeOrders.filter((order) => order && order.status === "Pending");
-  const completedOrders = safeOrders.filter((order) => order && order.status === "Delivered");
-  const totalSales = completedOrders.reduce(
-    (total, order) => total + Number(order?.total || 0),
-    0
-  );
-  const unreadNotificationCount = safeNotifications.filter((notification) => notification && !notification.isRead).length;
+  }, [accountType, loadOrders]);
 
   async function openNotification(notification) {
     try {
       if (!notification.isRead) {
-        await api(`/orders/notifications/${notification.id}/read`, { method: "PATCH" });
-        setNotifications((currentNotifications) => (Array.isArray(currentNotifications) ? currentNotifications : []).map((current) => (
-          current.id === notification.id ? { ...current, isRead: true } : current
-        )));
+        await api(`/orders/notifications/${notification.id}/read`, {
+          method: "PATCH",
+        });
+        setNotifications((current) =>
+          current.map((n) =>
+            n.id === notification.id ? { ...n, isRead: true } : n
+          )
+        );
       }
-      navigate(`/orders/${notification.orderId}/tracking`);
-    } catch (error) {
-      alert(error.message);
+      if (notification.orderId) {
+        navigate(`/orders/${notification.orderId}/tracking`);
+      }
+    } catch (err) {
+      alert(err.message);
     }
   }
 
-  async function dismissNotification(notificationId, e) {
-    if (e) e.stopPropagation();
+  async function acceptOrder(orderId) {
     try {
-      setNotifications((current) => (Array.isArray(current) ? current.filter((n) => n.id !== notificationId) : []));
-      await api(`/orders/notifications/${notificationId}`, { method: "DELETE" });
-    } catch (error) {
-      console.error("Failed to dismiss notification:", error);
-    }
-  }
-
-  async function loadOrders() {
-    try {
-      const data = await api("/orders/mine");
-      setOrders(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error("Error refreshing orders:", error);
-    }
-  }
-
-  function handleLogout() {
-    localStorage.removeItem("farmlinkToken");
-    localStorage.removeItem("farmlinkCurrentUser");
-    navigate("/");
-  }
-
-  async function updateOrderStatus(orderId, status, otp = null) {
-    try {
-      const body = { status };
-      if (otp) body.otp = otp;
       await api(`/orders/${orderId}/status`, {
         method: "PATCH",
-        body: JSON.stringify(body),
+        body: JSON.stringify({ status: "Accepted" }),
       });
-
-      if (status === "Delivered") stopLiveTracking();
-
-      alert("Order updated successfully.");
+      alert("Order confirmed! Nearby delivery riders will now be notified for pickup.");
       await loadOrders();
-      return true;
-    } catch (error) {
-      alert(error.message);
-      return false;
-    }
-  }
-
-  function stopLiveTracking() {
-    if (locationWatchRef.current !== null) {
-      navigator.geolocation?.clearWatch(locationWatchRef.current);
-      locationWatchRef.current = null;
-    }
-    lastLocationSentRef.current = 0;
-  }
-
-  async function sendDeliveryLocation(orderId, position, showConfirmation = false) {
-    await api(`/orders/${orderId}/location`, {
-      method: "POST",
-      body: JSON.stringify({
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-        note: "Farmer is currently delivering your order.",
-      }),
-    });
-
-    if (showConfirmation) alert("Your current delivery location was shared with the buyer.");
-  }
-
-  function startLiveTracking(orderId) {
-    if (!navigator.geolocation) {
-      alert("Your browser does not support live location sharing.");
-      return;
-    }
-
-    stopLiveTracking();
-    lastLocationSentRef.current = 0;
-    locationWatchRef.current = navigator.geolocation.watchPosition(
-      async (position) => {
-        if (Date.now() - lastLocationSentRef.current < 25000) return;
-        lastLocationSentRef.current = Date.now();
-        try {
-          await sendDeliveryLocation(orderId, position);
-        } catch (error) {
-          console.error("Could not update live delivery location:", error);
-        }
-      },
-      () => alert("Allow location permission to automatically share the delivery route with the buyer."),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-    );
-  }
-
-  async function startDelivery(orderId) {
-    const started = await updateOrderStatus(orderId, "Out for Delivery");
-    if (started) startLiveTracking(orderId);
-  }
-
-  async function handleVerifyDeliveryOtp(otp) {
-    if (!deliveringOrder) return;
-    setIsVerifyingOtp(true);
-    try {
-      await api(`/orders/${deliveringOrder.id}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "Delivered", otp }),
-      });
-      stopLiveTracking();
-      alert("Order marked as delivered successfully!");
-      setDeliveringOrder(null);
-      await loadOrders();
-    } catch (error) {
-      throw error;
-    } finally {
-      setIsVerifyingOtp(false);
+    } catch (err) {
+      alert(err.message);
     }
   }
 
@@ -235,233 +104,228 @@ function FarmerOrders() {
       alert(result.message);
       setCancellingOrderId(null);
       await loadOrders();
-    } catch (error) {
-      alert(error.message);
+    } catch (err) {
+      alert(err.message);
     } finally {
       setIsCancelling(false);
     }
   }
 
-  async function shareCurrentLocation(orderId) {
-    if (!navigator.geolocation) {
-      alert("Your browser does not support location sharing.");
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          await sendDeliveryLocation(orderId, position, true);
-        } catch (error) {
-          alert(error.message);
-        }
-      },
-      () => {
-        alert("Location permission was denied. Please allow location access and try again.");
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 0,
-      }
-    );
+  function handleLogout() {
+    localStorage.removeItem("farmlinkToken");
+    localStorage.removeItem("farmlinkCurrentUser");
+    navigate("/");
   }
+
+  const unreadNotificationCount = notifications.filter(
+    (notification) => !notification.isRead
+  ).length;
+
+  const safeOrders = Array.isArray(orders) ? orders : [];
 
   const filteredOrders = safeOrders.filter((order) => {
     if (!order) return false;
     if (statusFilter === "all") return true;
     if (statusFilter === "pending") return order.status === "Pending";
-    if (statusFilter === "accepted") return order.status === "Accepted";
-    if (statusFilter === "shipping") return order.status === "Out for Delivery";
+    if (statusFilter === "accepted") return ["Accepted", "Going to Farmer", "Reached Farmer"].includes(order.status);
+    if (statusFilter === "shipping") return ["Picked Up", "In Transit", "Out for Delivery"].includes(order.status);
     if (statusFilter === "delivered") return order.status === "Delivered";
     if (statusFilter === "cancelled") return ["Cancelled", "CANCELLED_BY_BUYER"].includes(order.status);
     return true;
   });
 
+  const getRiderStatusLabel = (status) => {
+    switch (status) {
+      case "Going to Farmer":
+        return "🛵 Rider On Way to Farm";
+      case "Reached Farmer":
+        return "📍 Rider Arrived at Your Farm";
+      case "Picked Up":
+      case "In Transit":
+        return "🚚 In Transit to Buyer";
+      case "Out for Delivery":
+        return "📍 Out for Final Delivery";
+      case "Delivered":
+        return "✓ Delivered & Completed";
+      default:
+        return status;
+    }
+  };
+
+  if (!currentUser || accountType !== "farmer") {
+    return (
+      <div className="auth-page">
+        <div className="auth-card">
+          <h1>Access denied</h1>
+          <p>Please log in as a farmer to view your orders.</p>
+          <Link className="farmer-btn" to="/login">
+            Go to Login
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="dashboard-page">
       <aside className="sidebar">
         <h2>🌱 FarmLink</h2>
-        <Link to="/">Home</Link>
-        <Link to="/farmer-dashboard">My Products</Link>
-        <Link to="/farmer-orders" style={{ background: "rgba(255,255,255,0.22)", color: "#fff", fontWeight: "800" }}>
-          Orders Received {orders.length > 0 && `(${orders.length})`}
+        <Link to="/" className="sidebar-nav-item">🏠 Home</Link>
+        <Link to="/farmer-dashboard" className="sidebar-nav-item">🌾 My Products</Link>
+        <Link to="/farmer-orders" className="sidebar-nav-item is-active">
+          📦 Orders Received {orders.length > 0 && <span className="nav-count-badge">{orders.length}</span>}
         </Link>
-        <Link to="/add-product" className="register-btn" style={{ padding: "8px 14px", textDecoration: "none" }}>
-          + Add Product
+        <Link to="/add-product" className="sidebar-nav-item">➕ Add Product</Link>
+        <Link to="/farmer-notifications" className="sidebar-nav-item">
+          🔔 Notifications {unreadNotificationCount > 0 && <span className="nav-count-badge alert">{unreadNotificationCount}</span>}
         </Link>
-        <button className="sidebar-cart" onClick={() => setNotificationsOpen((isOpen) => !isOpen)}>
-          🔔 Notifications{unreadNotificationCount ? ` (${unreadNotificationCount})` : ""}
-        </button>
         <button className="sidebar-logout" onClick={handleLogout}>
           Logout
         </button>
       </aside>
 
       <main className="dashboard-content">
-        <div className="dashboard-header" style={{ marginBottom: "28px" }}>
+        <div className="dashboard-header">
           <div>
-            <p className="section-tag">FARMER ORDERS MANAGEMENT</p>
+            <p className="section-tag">FARMER HARVEST ORDERS</p>
             <h1>Orders Received</h1>
-            <p>Review incoming orders from business buyers, dispatch harvests, and share live location.</p>
+            <p>Confirm harvest orders and monitor delivery partner pickup progress.</p>
           </div>
 
           <div className="dashboard-header-actions">
-            <Link className="register-btn" to="/add-product">
-              + Add Product
-            </Link>
+            <button
+              className="admin-refresh"
+              onClick={() => loadOrders(false)}
+              disabled={loading}
+            >
+              {loading ? "Loading..." : "↻ Refresh"}
+            </button>
           </div>
         </div>
 
-        <section className="dashboard-stats farmer-stats" style={{ marginBottom: "30px" }}>
-          <div className="dashboard-stat-card">
-            <p>Total Orders</p>
-            <h2>{orders.length}</h2>
-          </div>
-          <div className="dashboard-stat-card">
-            <p>Pending</p>
-            <h2>{pendingOrders.length}</h2>
-          </div>
-          <div className="dashboard-stat-card">
-            <p>Orders to Ship</p>
-            <h2>{ordersToShip.length}</h2>
-          </div>
-          <div className="dashboard-stat-card">
-            <p>Completed</p>
-            <h2>{completedOrders.length}</h2>
-          </div>
-          <div className="dashboard-stat-card">
-            <p>Total Income</p>
-            <h2>₹{totalSales.toLocaleString("en-IN")}</h2>
-          </div>
-        </section>
-
+        {/* Notifications Drawer */}
         {notificationsOpen && (
-          <section className="product-section order-notifications" aria-live="polite" style={{ marginBottom: "25px" }}>
-            <h2>Order Notifications</h2>
+          <section className="product-section order-notifications" aria-live="polite">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h2>Dispatch & Order Notifications</h2>
+              <button
+                type="button"
+                className="close-drawer-btn"
+                onClick={() => setNotificationsOpen(false)}
+              >
+                ✕ Close
+              </button>
+            </div>
             {notifications.length === 0 ? (
               <p className="muted-text">You have no notifications.</p>
             ) : (
               <div className="notification-list">
                 {notifications.map((notification) => (
-                  <div className="order-notification-wrapper" key={notification.id}>
-                    <button
-                      className={`order-notification ${notification.isRead ? "is-read" : "is-unread"}`}
-                      type="button"
-                      onClick={() => openNotification(notification)}
-                    >
-                      <strong>{notification.title || "Order Cancelled"}</strong>
-                      <span>{notification.message}</span>
-                      <time dateTime={notification.createdAt}>
-                        {new Date(notification.createdAt).toLocaleString()}
-                      </time>
-                    </button>
-                    <button
-                      className="notification-dismiss-btn"
-                      type="button"
-                      title="Dismiss notification"
-                      aria-label="Dismiss notification"
-                      onClick={(e) => dismissNotification(notification.id, e)}
-                    >
-                      ✕
-                    </button>
-                  </div>
+                  <button
+                    className={`order-notification ${
+                      notification.isRead ? "is-read" : "is-unread"
+                    }`}
+                    key={notification.id}
+                    type="button"
+                    onClick={() => openNotification(notification)}
+                  >
+                    <strong>{notification.title || "Dispatch Alert"}</strong>
+                    <span>{notification.message}</span>
+                    <time dateTime={notification.createdAt}>
+                      {new Date(notification.createdAt).toLocaleString()}
+                    </time>
+                  </button>
                 ))}
               </div>
             )}
           </section>
         )}
 
-        <section className="product-section">
-          <div className="section-heading" style={{ marginBottom: "20px" }}>
-            <h2>All Received Orders</h2>
-            <div className="market-category-pills" style={{ margin: 0 }}>
-              <button
-                className={statusFilter === "all" ? "is-active" : ""}
-                onClick={() => setStatusFilter("all")}
-              >
-                All ({orders.length})
-              </button>
-              <button
-                className={statusFilter === "pending" ? "is-active" : ""}
-                onClick={() => setStatusFilter("pending")}
-              >
-                Pending ({pendingOrders.length})
-              </button>
-              <button
-                className={statusFilter === "accepted" ? "is-active" : ""}
-                onClick={() => setStatusFilter("accepted")}
-              >
-                To Ship ({ordersToShip.length})
-              </button>
-              <button
-                className={statusFilter === "shipping" ? "is-active" : ""}
-                onClick={() => setStatusFilter("shipping")}
-              >
-                On Delivery
-              </button>
-              <button
-                className={statusFilter === "delivered" ? "is-active" : ""}
-                onClick={() => setStatusFilter("delivered")}
-              >
-                Delivered ({completedOrders.length})
-              </button>
-            </div>
-          </div>
+        {/* Order Status Filters */}
+        <div className="farmer-orders-filter-bar">
+          <button
+            className={`filter-btn ${statusFilter === "all" ? "active" : ""}`}
+            onClick={() => setStatusFilter("all")}
+          >
+            All Orders ({safeOrders.length})
+          </button>
+          <button
+            className={`filter-btn ${statusFilter === "pending" ? "active" : ""}`}
+            onClick={() => setStatusFilter("pending")}
+          >
+            Pending Confirmation ({safeOrders.filter((o) => o.status === "Pending").length})
+          </button>
+          <button
+            className={`filter-btn ${statusFilter === "accepted" ? "active" : ""}`}
+            onClick={() => setStatusFilter("accepted")}
+          >
+            Pickup & Rider Assigned ({safeOrders.filter((o) => ["Accepted", "Going to Farmer", "Reached Farmer"].includes(o.status)).length})
+          </button>
+          <button
+            className={`filter-btn ${statusFilter === "shipping" ? "active" : ""}`}
+            onClick={() => setStatusFilter("shipping")}
+          >
+            In Transit ({safeOrders.filter((o) => ["Picked Up", "In Transit", "Out for Delivery"].includes(o.status)).length})
+          </button>
+          <button
+            className={`filter-btn ${statusFilter === "delivered" ? "active" : ""}`}
+            onClick={() => setStatusFilter("delivered")}
+          >
+            Delivered ({safeOrders.filter((o) => o.status === "Delivered").length})
+          </button>
+        </div>
 
-          {loading ? (
+        {error && <div className="admin-error">{error}</div>}
+
+        <section className="product-section">
+          {loading && orders.length === 0 ? (
             <p className="muted-text">Loading orders...</p>
           ) : filteredOrders.length === 0 ? (
             <div className="empty-product">
               <div>📦</div>
               <h3>No orders found</h3>
-              <p>{statusFilter === "all" ? "You have not received any orders yet." : "No orders matching this status filter."}</p>
-              <Link className="farmer-btn" to="/farmer-dashboard" style={{ marginTop: "14px", display: "inline-block" }}>
-                Back to My Products
-              </Link>
+              <p>When buyers order your crops, they will appear here for confirmation and delivery.</p>
             </div>
           ) : (
-            <div className="farmer-orders-container">
+            <div className="farmer-orders-grid">
               {filteredOrders.map((order) => {
                 const itemsList = order.items && order.items.length > 0
                   ? order.items
                   : [{
                       id: `legacy-${order.id}`,
-                      productName: order.productName,
-                      productCategory: order.productCategory,
-                      productUnit: order.productUnit,
-                      quantity: order.quantity,
-                      unitPrice: order.unitPrice,
-                      total: order.total,
-                      discountAmount: order.discountAmount,
+                      productName: order.productName || "Farm Produce",
+                      productCategory: order.productCategory || "Vegetables",
+                      productUnit: order.productUnit || "kg",
+                      quantity: order.quantity || 1,
+                      unitPrice: order.unitPrice || 0,
+                      total: order.total || 0,
                     }];
 
                 const isPaid = String(order.paymentStatus || "").toUpperCase() === "PAID";
+                const isCancelled = ["Cancelled", "CANCELLED_BY_BUYER"].includes(order.status);
+                const hasRider = Boolean(order.deliveryBoyName);
 
                 return (
                   <article className="farmer-order-card" key={order.id}>
-                    {/* Order Top Header */}
-                    <div className="farmer-order-header">
-                      <div>
-                        <div className="farmer-order-title-group">
-                          <h3 className="farmer-order-id">
-                            Order #{order.id}
-                          </h3>
-                          {order.trackingCode && (
-                            <span className="farmer-order-code-badge">
-                              {order.trackingCode}
-                            </span>
-                          )}
-                          <span className={`status status-${String(order.status || "Pending").toLowerCase().replace(/\s+/g, "-")}`}>
-                            {order.status || "Pending"}
-                          </span>
-                        </div>
-                        <p className="farmer-order-date">
-                          Ordered on {order.createdAt ? new Date(order.createdAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "Recently"}
-                        </p>
+                    {/* Top Row: Order ID, Date, Status Pill */}
+                    <div className="farmer-order-card-header">
+                      <div className="farmer-order-card-title-group">
+                        <span className="farmer-order-id">ORDER #{order.id}</span>
+                        {order.trackingCode && (
+                          <span className="farmer-order-code-pill">{order.trackingCode}</span>
+                        )}
+                        <span className="farmer-order-date">
+                          {new Date(order.createdAt).toLocaleString("en-IN", {
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          })}
+                        </span>
                       </div>
 
-                      <div className="farmer-order-price-group">
+                      <div className="farmer-order-status-group">
+                        <span className={`farmer-order-status-badge status-${order.status.toLowerCase().replace(/\s+/g, "-")}`}>
+                          {order.status}
+                        </span>
                         <div className="farmer-order-total-amount">
                           ₹{Number(order.total || 0).toLocaleString("en-IN")}
                         </div>
@@ -471,7 +335,7 @@ function FarmerOrders() {
                       </div>
                     </div>
 
-                    {/* Buyer & Delivery Info */}
+                    {/* Buyer & Delivery Details */}
                     <div className="farmer-order-buyer-box">
                       <div>
                         <strong>Buyer:</strong> {order.businessName || order.deliveryName || "Business Buyer"}{" "}
@@ -483,6 +347,59 @@ function FarmerOrders() {
                         </div>
                       )}
                     </div>
+
+                    {/* Delivery Partner Profile Card (When Rider Accepted / Assigned) */}
+                    {hasRider ? (
+                      <div className="farmer-rider-status-card">
+                        <div className="farmer-rider-info-row">
+                          <div className="farmer-rider-avatar">
+                            {order.deliveryBoyName.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="farmer-rider-details">
+                            <span className="rider-tag">🛵 Assigned Delivery Partner</span>
+                            <h4>{order.deliveryBoyName}</h4>
+                            <span className="rider-vehicle-text">
+                              {order.deliveryBoyVehicle || "Bike"} {order.deliveryBoyVehicleNumber ? `(${order.deliveryBoyVehicleNumber})` : ""}
+                            </span>
+                          </div>
+                          <div className="farmer-rider-status-pill">
+                            <span className="status-indicator-dot" />
+                            <strong>{getRiderStatusLabel(order.status)}</strong>
+                          </div>
+                        </div>
+
+                        <div className="farmer-rider-actions">
+                          {order.deliveryBoyPhone && (
+                            <a className="rider-call-btn" href={`tel:${order.deliveryBoyPhone}`}>
+                              📞 Call Rider ({order.deliveryBoyPhone})
+                            </a>
+                          )}
+                          <Link className="rider-track-link" to={`/orders/${order.id}/tracking`}>
+                            🗺️ View Live GPS Map ↗
+                          </Link>
+                        </div>
+
+                        {order.deliveryEta && !["Delivered", "Cancelled", "CANCELLED_BY_BUYER"].includes(order.status) && (
+                          <div className="farmer-eta-pill">
+                            <span className="eta-icon">⏱️</span>
+                            <span>
+                              Estimated Transit Duration: <strong>{order.deliveryEta.estimatedDurationText}</strong> ({order.deliveryEta.distanceKm}) · Buyer Arrival: {order.deliveryEta.estimatedArrivalTime}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      order.status === "Accepted" && (
+                        <div className="farmer-rider-pending-card">
+                          <span>📡 Broadcasted on Radar: Waiting for nearby delivery partner to accept pickup…</span>
+                          {order.deliveryEta && (
+                            <div style={{ marginTop: "6px", fontSize: "12px", color: "#78350f" }}>
+                              ⏱️ Est. Buyer Delivery Duration after Pickup: <strong>{order.deliveryEta.estimatedDurationText}</strong> ({order.deliveryEta.distanceKm})
+                            </div>
+                          )}
+                        </div>
+                      )
+                    )}
 
                     {/* Grouped Products Table / List */}
                     <div className="farmer-order-items-wrapper">
@@ -523,7 +440,7 @@ function FarmerOrders() {
                       ))}
                     </div>
 
-                    {/* Footer Actions */}
+                    {/* Footer Actions (Farmer confirms order or views tracking; NO Start Delivery button) */}
                     <div className="farmer-order-footer">
                       <div>
                         {hasSuccessfulOnlinePayment(order) && (
@@ -535,43 +452,33 @@ function FarmerOrders() {
 
                       <div className="farmer-order-actions">
                         <Link className="btn-tracking-view" to={`/orders/${order.id}/tracking`}>
-                          View Tracking →
+                          View Live Tracking →
                         </Link>
 
                         {order.status === "Pending" && (
+                          <>
+                            <button
+                              className="btn-confirm-harvest"
+                              onClick={() => acceptOrder(order.id)}
+                            >
+                              ✓ Confirm & Accept Order
+                            </button>
+                            <button
+                              className="btn-cancel-order"
+                              onClick={() => setCancellingOrderId(order.id)}
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        )}
+
+                        {order.status === "Accepted" && !hasRider && !hasSuccessfulOnlinePayment(order) && (
                           <button
                             className="btn-cancel-order"
                             onClick={() => setCancellingOrderId(order.id)}
                           >
-                            Cancel
+                            Cancel Order
                           </button>
-                        )}
-
-                        {order.status === "Accepted" && (
-                          <>
-                            <button className="btn-start-delivery" onClick={() => startDelivery(order.id)}>
-                              Start Delivery
-                            </button>
-                            {!hasSuccessfulOnlinePayment(order) && (
-                              <button className="btn-cancel-order" onClick={() => setCancellingOrderId(order.id)}>
-                                Cancel Order
-                              </button>
-                            )}
-                          </>
-                        )}
-
-                        {order.status === "Out for Delivery" && (
-                          <>
-                            <button className="btn-start-delivery" onClick={() => shareCurrentLocation(order.id)}>
-                              Update Location
-                            </button>
-                            <button
-                              className="btn-mark-delivered"
-                              onClick={() => setDeliveringOrder(order)}
-                            >
-                              🔐 Mark Delivered
-                            </button>
-                          </>
                         )}
                       </div>
                     </div>
@@ -582,15 +489,6 @@ function FarmerOrders() {
           )}
         </section>
       </main>
-
-      {deliveringOrder && (
-        <DeliveryOtpModal
-          order={deliveringOrder}
-          onClose={() => setDeliveringOrder(null)}
-          onConfirm={handleVerifyDeliveryOtp}
-          submitting={isVerifyingOtp}
-        />
-      )}
 
       {cancellingOrderId && (
         <CancellationModal

@@ -36,9 +36,11 @@ function CategoryProducts() {
     ? "/farmer-dashboard"
     : currentUser?.accountType === "business"
       ? "/business-dashboard"
-      : currentUser?.accountType === "admin"
-        ? "/admin-dashboard"
-        : null;
+      : currentUser?.accountType === "delivery"
+        ? "/delivery-dashboard"
+        : currentUser?.accountType === "admin"
+          ? "/admin-dashboard"
+          : null;
 
   function updateCart(nextCart) {
     setCart(nextCart);

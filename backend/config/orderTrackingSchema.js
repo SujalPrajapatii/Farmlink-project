@@ -1,10 +1,52 @@
 import pool from "./db.js";
 
-// Keeps existing FarmLink databases compatible when order tracking is added.
+// Keeps existing FarmLink databases compatible when order tracking and delivery features are added.
 // It is safe to run every time the API starts.
 export async function ensureOrderTrackingSchema() {
-  // Existing databases created before online payments only allowed four statuses.
-  // Online checkout needs Awaiting Payment and delivery tracking needs Out for Delivery.
+  // 1. Upgrade users account_type ENUM to include 'delivery'
+  const [userAccountTypeCol] = await pool.execute(
+    `SELECT column_type AS columnType
+     FROM information_schema.columns
+     WHERE table_schema = DATABASE()
+       AND table_name = 'users'
+       AND column_name = 'account_type'`
+  );
+
+  if (userAccountTypeCol[0] && !userAccountTypeCol[0].columnType.includes("delivery")) {
+    await pool.execute(
+      `ALTER TABLE users
+       MODIFY account_type ENUM('farmer', 'business', 'admin', 'delivery') NOT NULL DEFAULT 'business'`
+    );
+  }
+
+  // 2. Add delivery partner rider fields to users table
+  const userRiderColumns = [
+    ["phone", "VARCHAR(20) NULL"],
+    ["vehicle_type", "VARCHAR(50) NULL DEFAULT 'Bike'"],
+    ["vehicle_number", "VARCHAR(30) NULL"],
+    ["availability_status", "ENUM('AVAILABLE', 'BUSY', 'OFFLINE') NOT NULL DEFAULT 'AVAILABLE'"],
+    ["current_latitude", "DECIMAL(10, 7) NULL"],
+    ["current_longitude", "DECIMAL(10, 7) NULL"],
+    ["last_location_time", "TIMESTAMP NULL"],
+  ];
+  for (const [column, definition] of userRiderColumns) {
+    const [existing] = await pool.execute(
+      `SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'users' AND column_name = ?`,
+      [column]
+    );
+    if (existing.length === 0) {
+      await pool.execute(`ALTER TABLE users ADD COLUMN ${column} ${definition}`);
+    }
+  }
+
+  // 3. Upgrade orders status ENUM to include Swiggy/Uber-style delivery workflow
+  const fullOrderStatusEnum = `ENUM(
+    'Awaiting Payment', 'Pending', 'Accepted',
+    'Delivery Boy Assigned', 'Going to Farmer', 'Reached Farmer',
+    'Picked Up', 'In Transit', 'Out for Delivery', 'Delivered',
+    'Cancelled', 'CANCELLED_BY_BUYER'
+  )`;
+
   const [statusColumns] = await pool.execute(
     `SELECT column_type AS columnType
      FROM information_schema.columns
@@ -15,17 +57,33 @@ export async function ensureOrderTrackingSchema() {
 
   if (
     statusColumns[0] &&
-    (!statusColumns[0].columnType.includes("Awaiting Payment") ||
-      !statusColumns[0].columnType.includes("Out for Delivery") ||
-      !statusColumns[0].columnType.includes("CANCELLED_BY_BUYER"))
+    (!statusColumns[0].columnType.includes("Going to Farmer") ||
+      !statusColumns[0].columnType.includes("Reached Farmer"))
   ) {
     await pool.execute(
-      `ALTER TABLE orders
-       MODIFY status ENUM(
-         'Awaiting Payment', 'Pending', 'Accepted',
-         'Out for Delivery', 'Delivered', 'Cancelled', 'CANCELLED_BY_BUYER'
-       ) NULL DEFAULT 'Pending'`
+      `ALTER TABLE orders MODIFY status ${fullOrderStatusEnum} NULL DEFAULT 'Pending'`
     );
+  }
+
+  // 4. Add delivery assignment and milestone timestamps to orders table
+  const orderDeliveryColumns = [
+    ["delivery_boy_id", "INT NULL"],
+    ["assigned_at", "TIMESTAMP NULL"],
+    ["reached_farmer_at", "TIMESTAMP NULL"],
+    ["picked_up_at", "TIMESTAMP NULL"],
+    ["in_transit_at", "TIMESTAMP NULL"],
+    ["out_for_delivery_at", "TIMESTAMP NULL"],
+    ["delivered_at", "TIMESTAMP NULL"],
+    ["delivery_notes", "VARCHAR(255) NULL"],
+  ];
+  for (const [column, definition] of orderDeliveryColumns) {
+    const [existing] = await pool.execute(
+      `SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'orders' AND column_name = ?`,
+      [column]
+    );
+    if (existing.length === 0) {
+      await pool.execute(`ALTER TABLE orders ADD COLUMN ${column} ${definition}`);
+    }
   }
 
   const [trackingCodeColumn] = await pool.execute(
@@ -91,6 +149,22 @@ export async function ensureOrderTrackingSchema() {
       INDEX idx_delivery_locations_order_created (order_id, created_at)
     ) ENGINE=InnoDB
   `);
+
+  const locationExtraColumns = [
+    ["delivery_boy_id", "INT NULL"],
+    ["speed", "DECIMAL(5, 2) NULL"],
+    ["heading", "DECIMAL(5, 2) NULL"],
+    ["accuracy", "DECIMAL(8, 2) NULL"],
+  ];
+  for (const [column, definition] of locationExtraColumns) {
+    const [existing] = await pool.execute(
+      `SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'order_delivery_locations' AND column_name = ?`,
+      [column]
+    );
+    if (existing.length === 0) {
+      await pool.execute(`ALTER TABLE order_delivery_locations ADD COLUMN ${column} ${definition}`);
+    }
+  }
 
   await pool.execute(`
     CREATE TABLE IF NOT EXISTS order_notifications (
@@ -160,16 +234,31 @@ export async function ensureOrderTrackingSchema() {
       discount_pct INT NOT NULL DEFAULT 0,
       original_total DECIMAL(10, 2) NULL,
       total DECIMAL(10, 2) NOT NULL,
-      status ENUM(
-        'Awaiting Payment', 'Pending', 'Accepted',
-        'Out for Delivery', 'Delivered', 'Cancelled', 'CANCELLED_BY_BUYER'
-      ) NULL DEFAULT 'Pending',
+      status ${fullOrderStatusEnum} NULL DEFAULT 'Pending',
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       INDEX idx_order_items_order (order_id),
       INDEX idx_order_items_farmer (farmer_id),
       INDEX idx_order_items_product (product_id)
     ) ENGINE=InnoDB
   `);
+
+  const [orderItemsStatusCol] = await pool.execute(
+    `SELECT column_type AS columnType
+     FROM information_schema.columns
+     WHERE table_schema = DATABASE()
+       AND table_name = 'order_items'
+       AND column_name = 'status'`
+  );
+
+  if (
+    orderItemsStatusCol[0] &&
+    (!orderItemsStatusCol[0].columnType.includes("Going to Farmer") ||
+      !orderItemsStatusCol[0].columnType.includes("Reached Farmer"))
+  ) {
+    await pool.execute(
+      `ALTER TABLE order_items MODIFY status ${fullOrderStatusEnum} NULL DEFAULT 'Pending'`
+    );
+  }
 
   // Dedicated Payments Table (3NF Normalized):
   await pool.execute(`
@@ -184,6 +273,18 @@ export async function ensureOrderTrackingSchema() {
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       INDEX idx_payments_order (order_id)
+    ) ENGINE=InnoDB
+  `);
+
+  // Table to track orders rejected/denied by a specific delivery rider
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS rider_rejected_orders (
+      rro_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      rider_id INT NOT NULL,
+      order_id INT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_rider_order_rejection (rider_id, order_id),
+      INDEX idx_rro_rider (rider_id)
     ) ENGINE=InnoDB
   `);
 }

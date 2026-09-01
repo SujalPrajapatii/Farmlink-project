@@ -10,7 +10,7 @@ const categoryCards = [
 
 function Home() {
   const currentUser = JSON.parse(localStorage.getItem("farmlinkCurrentUser") || "null");
-  const dashboardPath = currentUser?.accountType === "farmer" ? "/farmer-dashboard" : currentUser?.accountType === "business" ? "/business-dashboard" : currentUser?.accountType === "admin" ? "/admin-dashboard" : null;
+  const dashboardPath = currentUser?.accountType === "farmer" ? "/farmer-dashboard" : currentUser?.accountType === "business" ? "/business-dashboard" : currentUser?.accountType === "delivery" ? "/delivery-dashboard" : currentUser?.accountType === "admin" ? "/admin-dashboard" : null;
 
   return <div className="app">
     <header className="navbar">

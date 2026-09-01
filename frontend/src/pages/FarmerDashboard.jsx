@@ -134,13 +134,15 @@ function FarmerDashboard() {
     <div className="dashboard-page">
       <aside className="sidebar">
         <h2>🌱 FarmLink</h2>
-        <Link to="/">Home</Link>
-        <Link to="/farmer-dashboard" style={{ background: "rgba(255,255,255,0.22)", color: "#fff", fontWeight: "800" }}>My Products</Link>
-        <Link to="/farmer-orders">Orders Received {orders.length > 0 && `(${orders.length})`}</Link>
-        <Link to="/add-product" className="register-btn" style={{ padding: "8px 14px", textDecoration: "none" }}>+ Add Product</Link>
-        <button className="sidebar-cart" onClick={() => setNotificationsOpen((isOpen) => !isOpen)}>
-          🔔 Notifications{unreadNotificationCount ? ` (${unreadNotificationCount})` : ""}
-        </button>
+        <Link to="/" className="sidebar-nav-item">🏠 Home</Link>
+        <Link to="/farmer-dashboard" className="sidebar-nav-item is-active">🌾 My Products</Link>
+        <Link to="/farmer-orders" className="sidebar-nav-item">
+          📦 Orders Received {orders.length > 0 && <span className="nav-count-badge">{orders.length}</span>}
+        </Link>
+        <Link to="/add-product" className="sidebar-nav-item">➕ Add Product</Link>
+        <Link to="/farmer-notifications" className="sidebar-nav-item">
+          🔔 Notifications {unreadNotificationCount > 0 && <span className="nav-count-badge alert">{unreadNotificationCount}</span>}
+        </Link>
 
         <button className="sidebar-logout" onClick={handleLogout}>
           Logout

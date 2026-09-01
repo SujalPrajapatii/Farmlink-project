@@ -132,13 +132,15 @@ function BusinessDashboard() {
     <div className="dashboard-page">
       <aside className="sidebar">
         <h2>🌱 FarmLink</h2>
-        <Link to="/">Home</Link>
-        <Link to="/business-dashboard" style={{ background: "rgba(255,255,255,0.22)", color: "#fff", fontWeight: "800" }}>Marketplace</Link>
-        <Link to="/my-orders">My Orders</Link>
-        <button className="sidebar-cart" onClick={() => navigate("/checkout", { state: { cart } })}>Cart ({cart.length})</button>
-        <button className="sidebar-cart" onClick={() => setNotificationsOpen((isOpen) => !isOpen)}>
-          Notifications{unreadNotificationCount ? ` (${unreadNotificationCount})` : ""}
+        <Link to="/" className="sidebar-nav-item">🏠 Home</Link>
+        <Link to="/business-dashboard" className="sidebar-nav-item is-active">🌾 Marketplace</Link>
+        <Link to="/my-orders" className="sidebar-nav-item">📦 My Orders</Link>
+        <button type="button" className="sidebar-nav-item" onClick={() => navigate("/checkout", { state: { cart } })}>
+          🛒 Cart {cart.length > 0 && <span className="nav-count-badge">{cart.length}</span>}
         </button>
+        <Link to="/notifications" className="sidebar-nav-item">
+          🔔 Notifications {unreadNotificationCount > 0 && <span className="nav-count-badge alert">{unreadNotificationCount}</span>}
+        </Link>
 
         <button className="sidebar-logout" onClick={handleLogout}>
           Logout

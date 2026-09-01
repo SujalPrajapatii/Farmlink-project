@@ -13,6 +13,9 @@ import OrderTracking from "./pages/OrderTracking";
 import CategoryProducts from "./pages/CategoryProducts";
 import BuyerOrders from "./pages/BuyerOrders";
 import FarmerOrders from "./pages/FarmerOrders";
+import DeliveryDashboard from "./pages/DeliveryDashboard";
+import BuyerNotifications from "./pages/BuyerNotifications";
+import FarmerNotifications from "./pages/FarmerNotifications";
 import { LanguageProvider, LanguageSelector, PageTranslator } from "./LanguageContext";
 
 class ErrorBoundary extends Component {
@@ -69,7 +72,9 @@ function ProtectedRoute({ children, roles }) {
       ? "/farmer-dashboard"
       : currentUser.accountType === "business"
         ? "/business-dashboard"
-        : "/admin-dashboard";
+        : currentUser.accountType === "delivery"
+          ? "/delivery-dashboard"
+          : "/admin-dashboard";
     return <Navigate to={destination} replace />;
   }
 
@@ -82,6 +87,7 @@ function OrdersRoute() {
   if (!token || !currentUser || !currentUser.accountType) return <Navigate to="/login" replace />;
   if (currentUser.accountType === "farmer") return <FarmerOrders />;
   if (currentUser.accountType === "business") return <BuyerOrders />;
+  if (currentUser.accountType === "delivery") return <DeliveryDashboard />;
   if (currentUser.accountType === "admin") return <AdminDashboard />;
   return <Navigate to="/" replace />;
 }
@@ -101,6 +107,8 @@ function App() {
           <Route path="/farmer-orders" element={<ProtectedRoute roles={["farmer"]}><FarmerOrders /></ProtectedRoute>} />
           <Route path="/orders-received" element={<ProtectedRoute roles={["farmer"]}><FarmerOrders /></ProtectedRoute>} />
           <Route path="/business-dashboard" element={<ProtectedRoute roles={["business"]}><BusinessDashboard /></ProtectedRoute>} />
+          <Route path="/delivery-dashboard" element={<ProtectedRoute roles={["delivery"]}><DeliveryDashboard /></ProtectedRoute>} />
+          <Route path="/rider-dashboard" element={<ProtectedRoute roles={["delivery"]}><DeliveryDashboard /></ProtectedRoute>} />
           <Route path="/my-orders" element={<OrdersRoute />} />
           <Route path="/orders" element={<OrdersRoute />} />
           <Route path="/view-orders" element={<OrdersRoute />} />
@@ -109,7 +117,10 @@ function App() {
           <Route path="/add-product" element={<ProtectedRoute roles={["farmer"]}><AddProduct /></ProtectedRoute>} />
           <Route path="/edit-product/:id" element={<ProtectedRoute roles={["farmer"]}><EditProduct /></ProtectedRoute>} />
           <Route path="/checkout" element={<ProtectedRoute roles={["business"]}><Checkout /></ProtectedRoute>} />
-          <Route path="/orders/:id/tracking" element={<ProtectedRoute roles={["farmer", "business"]}><OrderTracking /></ProtectedRoute>} />
+          <Route path="/orders/:id/tracking" element={<ProtectedRoute roles={["farmer", "business", "delivery", "admin"]}><OrderTracking /></ProtectedRoute>} />
+          <Route path="/notifications" element={<ProtectedRoute roles={["business"]}><BuyerNotifications /></ProtectedRoute>} />
+          <Route path="/buyer-notifications" element={<ProtectedRoute roles={["business"]}><BuyerNotifications /></ProtectedRoute>} />
+          <Route path="/farmer-notifications" element={<ProtectedRoute roles={["farmer"]}><FarmerNotifications /></ProtectedRoute>} />
           <Route path="/categories/:category" element={<CategoryProducts />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

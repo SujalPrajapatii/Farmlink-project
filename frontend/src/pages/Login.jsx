@@ -18,8 +18,7 @@ function Login() {
     });
   }
 
-  async function handleSubmit(event) 
-  {
+  async function handleSubmit(event) {
     event.preventDefault();
 
     try {
@@ -27,16 +26,16 @@ function Login() {
         method: "POST",
         body: JSON.stringify(formData),
       });
-    
+
       localStorage.setItem("farmlinkToken", result.token);
-    
+
       localStorage.setItem(
         "farmlinkCurrentUser",
         JSON.stringify(result.user)
       );
-    
+
       alert("Login successful!");
-    
+
       const returnTo = location.state?.from?.pathname;
 
       if (returnTo) {
@@ -45,6 +44,8 @@ function Login() {
         navigate("/farmer-dashboard");
       } else if (result.user.accountType === "business") {
         navigate("/business-dashboard");
+      } else if (result.user.accountType === "delivery") {
+        navigate("/delivery-dashboard");
       } else {
         navigate("/admin-dashboard");
       }
@@ -62,14 +63,18 @@ function Login() {
             <div className="auth-brand-copy">
               <span className="auth-leaf">✦</span>
               <h2>Trade fresh.<br />Grow together.</h2>
-              <p>Direct connections for farmers and businesses who value quality produce.</p>
+              <p>Direct connections for farmers, businesses, and swift delivery partners.</p>
             </div>
-            <span className="auth-brand-caption">FRESH PRODUCE · FAIR TRADE</span>
+            <span className="auth-brand-caption">FRESH PRODUCE · DIRECT TRADE</span>
           </div>
         </section>
         <form className="auth-card auth-showcase-form" onSubmit={handleSubmit}>
           <Link className="back-link" to="/">← Back to FarmLink</Link>
-          <div className="auth-form-heading"><span>WELCOME BACK</span><h1>Log in to FarmLink</h1><p>Enter your details to manage your marketplace account.</p></div>
+          <div className="auth-form-heading">
+            <span>WELCOME BACK</span>
+            <h1>Log in to FarmLink</h1>
+            <p>Enter your details to access your dashboard.</p>
+          </div>
           <label>Email Address</label>
           <input type="email" name="email" value={formData.email} onChange={handleChange} placeholder="name@example.com" required />
           <label>Password</label>
