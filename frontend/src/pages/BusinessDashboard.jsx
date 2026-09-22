@@ -1,11 +1,12 @@
 import { api } from "../api";
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { CATEGORY_IMAGES, getCategoryKey, getProductImage, handleImageError } from "../productImages";
 import { getTierPricing } from "../pricing";
 
 function BusinessDashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const currentUser = JSON.parse(
     localStorage.getItem("farmlinkCurrentUser") || "null"
@@ -14,7 +15,18 @@ function BusinessDashboard() {
   const accountType = currentUser?.accountType;
 
   const [products, setProducts] = useState([]);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("search") || "";
+  });
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const searchParam = params.get("search");
+    if (searchParam !== null) {
+      setSearch(searchParam);
+    }
+  }, [location.search]);
   const [quantity, setQuantity] = useState({});
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [cart, setCart] = useState(() => JSON.parse(localStorage.getItem("farmlinkCart") || "[]"));
@@ -41,7 +53,7 @@ function BusinessDashboard() {
   }
 
   useEffect(() => {
-    if (accountType !== "business") return;
+    if (!currentUser) return;
 
     let active = true;
     let firstLoad = true;
@@ -72,14 +84,14 @@ function BusinessDashboard() {
       window.removeEventListener("focus", loadDashboardData);
       window.clearInterval(refreshId);
     };
-  }, [accountType]);
+  }, [currentUser?.id]);
 
-  if (!currentUser || accountType !== "business") {
+  if (!currentUser) {
     return (
       <div className="auth-page">
         <div className="auth-card">
           <h1>Access denied</h1>
-          <p>Please log in as a business buyer to continue.</p>
+          <p>Please log in to continue.</p>
 
           <Link className="farmer-btn" to="/login">
             Go to Login
@@ -153,6 +165,43 @@ function BusinessDashboard() {
             <p className="section-tag">FARMLINK MARKETPLACE</p>
             <h1>Welcome, {currentUser.name}!<br /><em>Fresh produce, direct from farms.</em></h1>
             <p>Discover quality crops from trusted growers. Clear pricing, available stock, and easy delivery tracking.</p>
+
+            <div className="buyer-hero-search-wrapper">
+              <div className="buyer-hero-search-bar">
+                <span className="buyer-search-icon" aria-hidden="true">🔍</span>
+                <input
+                  type="text"
+                  className="buyer-search-input"
+                  placeholder="Search produce by crop name, category, or farm location..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+                {search && (
+                  <button
+                    type="button"
+                    className="buyer-search-clear"
+                    onClick={() => setSearch("")}
+                    aria-label="Clear search"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <div className="buyer-hero-tags">
+                <span className="buyer-tag-label">Popular:</span>
+                {["Tomatoes", "Potatoes", "Onions", "Wheat", "Mangoes"].map((tag) => (
+                  <button
+                    type="button"
+                    key={tag}
+                    className={`buyer-tag-pill ${search.toLowerCase() === tag.toLowerCase() ? "is-active" : ""}`}
+                    onClick={() => setSearch(search.toLowerCase() === tag.toLowerCase() ? "" : tag)}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <a className="market-hero-action" href="#products">Browse fresh produce <span>↓</span></a>
           </div>
           <div className="market-hero-image"><img src="https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=1200&q=88" alt="Farmer harvesting fresh vegetables" /><div><span>✓</span><p><strong>Farm-fresh quality</strong><br />From verified growers</p></div></div>
@@ -238,13 +287,33 @@ function BusinessDashboard() {
         </section>
 
         <section className="product-section market-product-section">
-          <div className="section-heading"><h2>Available produce</h2><span>{filteredProducts.length} fresh listing{filteredProducts.length === 1 ? "" : "s"}</span></div>
+          <div className="section-heading">
+            <h2>Available produce</h2>
+            <span>{filteredProducts.length} fresh listing{filteredProducts.length === 1 ? "" : "s"}</span>
+          </div>
+
+          {search && (
+            <div className="active-search-indicator">
+              <span>Showing {filteredProducts.length} result{filteredProducts.length === 1 ? "" : "s"} for "<strong>{search}</strong>"</span>
+              <button type="button" onClick={() => setSearch("")}>✕ Clear search</button>
+            </div>
+          )}
 
           {filteredProducts.length === 0 ? (
             <div className="empty-product">
               <div>🧺</div>
-              <h3>No products found</h3>
-              <p>Try another search or check again later.</p>
+              <h3>No products found {search ? `matching "${search}"` : ""}</h3>
+              <p>Try another search keyword or check again later.</p>
+              {search && (
+                <button
+                  type="button"
+                  className="farmer-btn"
+                  style={{ marginTop: "12px", display: "inline-block" }}
+                  onClick={() => { setSearch(""); setSelectedCategory("all"); }}
+                >
+                  Clear search & show all produce
+                </button>
+              )}
             </div>
           ) : (
             <div className="product-grid">

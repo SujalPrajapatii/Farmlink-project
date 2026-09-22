@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { api } from "../api";
 import DeliveryOtpModal from "../components/DeliveryOtpModal";
 import { getProductImage, handleImageError } from "../productImages";
@@ -10,6 +10,7 @@ const formatDate = (val) =>
 
 export default function DeliveryDashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const currentUser = JSON.parse(localStorage.getItem("farmlinkCurrentUser") || "null");
 
   const [dashboardData, setDashboardData] = useState(null);
@@ -18,8 +19,19 @@ export default function DeliveryDashboard() {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState("active"); // 'active', 'history', 'profile'
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState(
+    () => location.state?.tab || (location.hash === "#profile" ? "profile" : location.hash === "#history" ? "history" : "active")
+  );
+
+  useEffect(() => {
+    if (location.state?.tab) {
+      setActiveTab(location.state.tab);
+    } else if (location.hash === "#profile") {
+      setActiveTab("profile");
+    } else if (location.hash === "#history") {
+      setActiveTab("history");
+    }
+  }, [location.state?.tab, location.hash]);
 
   // Live GPS tracking state
   const [isGpsTracking, setIsGpsTracking] = useState(false);
@@ -359,7 +371,7 @@ export default function DeliveryDashboard() {
           onClick={() => setActiveTab("history")}
           className={`sidebar-nav-item ${activeTab === "history" ? "is-active" : ""}`}
         >
-          📜 Delivery History ({completedOrders.length})
+          📜 Delivery History {completedOrders.length > 0 && <span className="nav-count-badge">{completedOrders.length}</span>}
         </button>
 
         <button
@@ -370,13 +382,12 @@ export default function DeliveryDashboard() {
           ⚙️ Vehicle & Profile
         </button>
 
-        <button
-          type="button"
+        <Link
+          to="/delivery-notifications"
           className="sidebar-nav-item"
-          onClick={() => setNotificationsOpen((v) => !v)}
         >
           🔔 Notifications {unreadNotifCount > 0 && <span className="nav-count-badge alert">{unreadNotifCount}</span>}
-        </button>
+        </Link>
 
         <button className="sidebar-logout" onClick={handleLogout}>
           Logout
@@ -465,37 +476,6 @@ export default function DeliveryDashboard() {
             <small>Total payouts + incentives</small>
           </div>
         </section>
-
-        {/* Notifications Drawer */}
-        {notificationsOpen && (
-          <section className="product-section order-notifications" style={{ marginBottom: "24px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h2>Order & Dispatch Notifications</h2>
-              <button
-                type="button"
-                className="close-drawer-btn"
-                onClick={() => setNotificationsOpen(false)}
-              >
-                ✕ Close
-              </button>
-            </div>
-            {notifications.length === 0 ? (
-              <p className="muted-text">No notifications yet.</p>
-            ) : (
-              <div className="notification-list">
-                {notifications.map((n) => (
-                  <div className="order-notification-wrapper" key={n.id}>
-                    <div className={`order-notification ${n.isRead ? "is-read" : "is-unread"}`}>
-                      <strong>{n.title || "Dispatch Alert"}</strong>
-                      <span>{n.message}</span>
-                      <time>{new Date(n.createdAt).toLocaleString()}</time>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
 
         {error && <div className="admin-error">{error}</div>}
 
@@ -937,79 +917,185 @@ export default function DeliveryDashboard() {
         {/* TAB 3: VEHICLE & PROFILE SETTINGS                                    */}
         {/* ==================================================================== */}
         {activeTab === "profile" && (
-          <section className="product-section">
-            <div className="section-heading" style={{ marginBottom: "20px" }}>
-              <h2>Rider Profile & Vehicle Settings</h2>
+          <section className="product-section vehicle-profile-section">
+            <div className="section-heading" style={{ marginBottom: "22px" }}>
+              <div>
+                <h2>Rider Profile & Vehicle Settings</h2>
+                <p className="muted-text" style={{ marginTop: "4px" }}>
+                  Manage your verified fleet profile, registered vehicle specs, and shift availability.
+                </p>
+              </div>
             </div>
 
-            <form className="delivery-profile-form" onSubmit={handleSaveProfile}>
-              {profileSuccess && <div className="admin-success-box">{profileSuccess}</div>}
-
-              <div className="form-grid-two">
-                <div className="form-group">
-                  <label>Full Name</label>
-                  <input
-                    type="text"
-                    value={profileForm.name}
-                    onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
-                    required
-                  />
+            <div className="delivery-profile-container">
+              {/* Left Column: Vehicle & Rider Info Showcase Card */}
+              <div className="vehicle-info-card">
+                <div className="vehicle-card-top">
+                  <div className="vehicle-big-icon">
+                    {profileForm.vehicleType?.includes("Scooter")
+                      ? "🛵"
+                      : profileForm.vehicleType?.includes("Electric")
+                      ? "⚡"
+                      : profileForm.vehicleType?.includes("Van") || profileForm.vehicleType?.includes("Truck")
+                      ? "🚚"
+                      : profileForm.vehicleType?.includes("Bicycle")
+                      ? "🚲"
+                      : "🏍️"}
+                  </div>
+                  <div className="vehicle-meta">
+                    <span className="rider-verified-badge" style={{ marginBottom: "4px", display: "inline-flex" }}>
+                      ✓ Verified Fleet Partner
+                    </span>
+                    <h3>{profileForm.name || rider.name || "Delivery Partner"}</h3>
+                    <span className="vehicle-type-tag">
+                      {profileForm.vehicleType || "Motorcycle / Bike"}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="form-group">
-                  <label>Phone Number</label>
-                  <input
-                    type="tel"
-                    value={profileForm.phone}
-                    onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
-                    placeholder="+91 98765 43210"
-                    required
-                  />
+                {/* License Plate Graphic */}
+                <div className="vehicle-plate-wrapper">
+                  <span className="vehicle-field-label">Vehicle Registration Plate</span>
+                  <div className="vehicle-plate-box">
+                    <span className="plate-ind">IND</span>
+                    <span className="plate-number">
+                      {profileForm.vehicleNumber?.trim() ? profileForm.vehicleNumber.toUpperCase() : "GJ-01-AB-1234"}
+                    </span>
+                    <span className="plate-state-emblem">🇮🇳</span>
+                  </div>
+                </div>
+
+                {/* Live Shift Availability Status Pill */}
+                <div className="vehicle-status-block">
+                  <span className="vehicle-field-label">Current Dispatch Status</span>
+                  <div className={`vehicle-shift-pill shift-${profileForm.availabilityStatus?.toLowerCase()}`}>
+                    <span className={`status-dot ${profileForm.availabilityStatus === "AVAILABLE" ? "green" : profileForm.availabilityStatus === "BUSY" ? "yellow" : "grey"}`} />
+                    <strong>
+                      {profileForm.availabilityStatus === "AVAILABLE"
+                        ? "🟢 Online (Accepting Pickups)"
+                        : profileForm.availabilityStatus === "BUSY"
+                        ? "🟡 Busy (On Active Delivery)"
+                        : "⚪ Offline (Off Shift)"}
+                    </strong>
+                  </div>
+                </div>
+
+                {/* Performance & Shift Stats Mini Grid */}
+                <div className="vehicle-stats-row">
+                  <div className="vehicle-stat-mini">
+                    <span>Lifetime Drops</span>
+                    <strong>{dashboardData?.totalDeliveredCount || 0}</strong>
+                  </div>
+                  <div className="vehicle-stat-mini">
+                    <span>Today's Drops</span>
+                    <strong>{dashboardData?.todayDeliveredCount || 0}</strong>
+                  </div>
+                  <div className="vehicle-stat-mini">
+                    <span>Active Drops</span>
+                    <strong>{dashboardData?.activeOrdersCount || 0}</strong>
+                  </div>
+                  <div className="vehicle-stat-mini">
+                    <span>Est. Payout</span>
+                    <strong>{formatMoney(dashboardData?.estimatedEarnings || 0)}</strong>
+                  </div>
+                </div>
+
+                <div className="vehicle-support-note">
+                  <span>🛡️</span>
+                  <p>FarmLink Rider Protection & Transit Insurance active on all assigned deliveries.</p>
                 </div>
               </div>
 
-              <div className="form-grid-two">
+              {/* Right Column: Settings & Profile Edit Form */}
+              <form className="delivery-profile-form" onSubmit={handleSaveProfile}>
+                {profileSuccess && (
+                  <div className="admin-success-box" style={{ marginBottom: "20px" }}>
+                    ✓ {profileSuccess}
+                  </div>
+                )}
+
+                <h3 className="profile-form-subtitle">👤 Personal & Contact Details</h3>
+
+                <div className="form-grid-two">
+                  <div className="form-group">
+                    <label>Full Legal Name</label>
+                    <input
+                      type="text"
+                      value={profileForm.name}
+                      onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
+                      placeholder="e.g. Jay Patel"
+                      required
+                    />
+                    <small className="form-hint">Name displayed on dispatch tickets and buyer delivery receipts.</small>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Primary Phone Number</label>
+                    <input
+                      type="tel"
+                      value={profileForm.phone}
+                      onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
+                      placeholder="+91 98765 43210"
+                      required
+                    />
+                    <small className="form-hint">Farmers and buyers will call this number during delivery handovers.</small>
+                  </div>
+                </div>
+
+                <hr className="profile-form-divider" />
+
+                <h3 className="profile-form-subtitle">🛵 Vehicle & Fleet Specs</h3>
+
+                <div className="form-grid-two">
+                  <div className="form-group">
+                    <label>Vehicle Type</label>
+                    <select
+                      value={profileForm.vehicleType}
+                      onChange={(e) => setProfileForm({ ...profileForm, vehicleType: e.target.value })}
+                    >
+                      <option value="Motorcycle / Bike">🏍️ Motorcycle / Bike</option>
+                      <option value="Scooter">🛵 Scooter</option>
+                      <option value="Electric Scooter">⚡ Electric Scooter</option>
+                      <option value="Delivery Van / Mini Truck">🚚 Delivery Van / Mini Truck</option>
+                      <option value="Bicycle">🚲 Bicycle</option>
+                    </select>
+                    <small className="form-hint">Used by dispatch algorithm to match harvest cargo volume.</small>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Vehicle Registration / Plate Number</label>
+                    <input
+                      type="text"
+                      value={profileForm.vehicleNumber}
+                      onChange={(e) => setProfileForm({ ...profileForm, vehicleNumber: e.target.value })}
+                      placeholder="e.g. GJ-01-AB-1234"
+                    />
+                    <small className="form-hint">Official RTO registration number verified by FarmLink Admin.</small>
+                  </div>
+                </div>
+
+                <hr className="profile-form-divider" />
+
+                <h3 className="profile-form-subtitle">🚦 Availability & Shift Settings</h3>
+
                 <div className="form-group">
-                  <label>Vehicle Type</label>
+                  <label>Shift Availability Status</label>
                   <select
-                    value={profileForm.vehicleType}
-                    onChange={(e) => setProfileForm({ ...profileForm, vehicleType: e.target.value })}
+                    value={profileForm.availabilityStatus}
+                    onChange={(e) => setProfileForm({ ...profileForm, availabilityStatus: e.target.value })}
                   >
-                    <option value="Motorcycle / Bike">Motorcycle / Bike</option>
-                    <option value="Scooter">Scooter</option>
-                    <option value="Electric Scooter">Electric Scooter</option>
-                    <option value="Delivery Van / Mini Truck">Delivery Van / Mini Truck</option>
-                    <option value="Bicycle">Bicycle</option>
+                    <option value="AVAILABLE">🟢 Available / Online (Receive incoming farm pickup requests)</option>
+                    <option value="BUSY">🟡 Busy (On active order delivery / picking up)</option>
+                    <option value="OFFLINE">⚪ Offline (Off Shift / Taking a break)</option>
                   </select>
+                  <small className="form-hint">When Online, dispatch towers and nearby farmers can route orders to you.</small>
                 </div>
 
-                <div className="form-group">
-                  <label>Vehicle Registration Number</label>
-                  <input
-                    type="text"
-                    value={profileForm.vehicleNumber}
-                    onChange={(e) => setProfileForm({ ...profileForm, vehicleNumber: e.target.value })}
-                    placeholder="e.g. GJ-01-AB-1234"
-                  />
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label>Availability Status</label>
-                <select
-                  value={profileForm.availabilityStatus}
-                  onChange={(e) => setProfileForm({ ...profileForm, availabilityStatus: e.target.value })}
-                >
-                  <option value="AVAILABLE">🟢 Available / Online (Receive delivery requests)</option>
-                  <option value="BUSY">🟡 Busy (On active delivery)</option>
-                  <option value="OFFLINE">⚪ Offline (Off Shift)</option>
-                </select>
-              </div>
-
-              <button type="submit" className="farmer-btn" disabled={profileSaving}>
-                {profileSaving ? "Saving Settings…" : "Save Rider Profile"}
-              </button>
-            </form>
+                <button type="submit" className="farmer-btn profile-submit-btn" disabled={profileSaving}>
+                  {profileSaving ? "Saving Settings…" : "💾 Save Rider Profile & Vehicle Settings"}
+                </button>
+              </form>
+            </div>
           </section>
         )}
       </main>

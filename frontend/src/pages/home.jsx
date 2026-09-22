@@ -1,4 +1,5 @@
-import { Link } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { CATEGORY_IMAGES } from "../productImages";
 
 const categoryCards = [
@@ -9,8 +10,26 @@ const categoryCards = [
 ];
 
 function Home() {
+  const navigate = useNavigate();
+  const [searchTerm, setSearchTerm] = useState("");
   const currentUser = JSON.parse(localStorage.getItem("farmlinkCurrentUser") || "null");
   const dashboardPath = currentUser?.accountType === "farmer" ? "/farmer-dashboard" : currentUser?.accountType === "business" ? "/business-dashboard" : currentUser?.accountType === "delivery" ? "/delivery-dashboard" : currentUser?.accountType === "admin" ? "/admin-dashboard" : null;
+
+  function handleSearch(e) {
+    if (e) e.preventDefault();
+    if (!searchTerm.trim()) return;
+    executeSearch(searchTerm);
+  }
+
+  function executeSearch(query) {
+    if (!query || !query.trim()) return;
+    const cleanQuery = query.trim();
+    if (currentUser?.accountType === "business") {
+      navigate(`/business-dashboard?search=${encodeURIComponent(cleanQuery)}`);
+    } else {
+      navigate(`/categories/all?search=${encodeURIComponent(cleanQuery)}`);
+    }
+  }
 
   return <div className="app">
     <header className="navbar">
@@ -26,6 +45,46 @@ function Home() {
           <p className="tag">GROW MORE. TRADE SMARTER.</p>
           <h1>Fresh from the farm,<br /><em>straight to your business.</em></h1>
           <p className="hero-description">FarmLink brings trusted farmers and serious buyers together for transparent pricing, dependable quality, and simpler agricultural trade.</p>
+
+          <form className="hero-search-box" onSubmit={handleSearch}>
+            <div className="hero-search-input-wrapper">
+              <span className="hero-search-icon" aria-hidden="true">🔍</span>
+              <input
+                type="text"
+                className="hero-search-input"
+                placeholder="Search crops, produce, or farm locations (e.g. Tomatoes, Wheat, Nashik)..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  className="hero-search-clear"
+                  onClick={() => setSearchTerm("")}
+                  aria-label="Clear search"
+                >
+                  ✕
+                </button>
+              )}
+              <button type="submit" className="hero-search-btn">
+                Search
+              </button>
+            </div>
+            <div className="hero-search-tags">
+              <span className="hero-search-tag-label">Popular:</span>
+              {["Tomatoes", "Potatoes", "Onions", "Wheat", "Mangoes"].map((tag) => (
+                <button
+                  type="button"
+                  key={tag}
+                  className="hero-search-tag"
+                  onClick={() => executeSearch(tag)}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </form>
+
           <div className="hero-buttons"><Link className="farmer-btn link-button" to="/register">Start selling <span>→</span></Link><a className="hero-text-link" href="#categories">Explore produce <span>↓</span></a></div>
           <div className="hero-proof"><div className="avatar-stack"><i>🌿</i><i>🍅</i><i>🌾</i></div><span>Built for farmers, retailers, and food businesses across India.</span></div>
         </div>

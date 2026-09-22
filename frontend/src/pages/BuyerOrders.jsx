@@ -33,7 +33,7 @@ function BuyerOrders() {
   const [isCancelling, setIsCancelling] = useState(false);
 
   useEffect(() => {
-    if (accountType !== "business") return;
+    if (!currentUser) return;
 
     let active = true;
     let firstLoad = true;
@@ -41,9 +41,11 @@ function BuyerOrders() {
     async function loadOrdersData() {
       try {
         if (firstLoad) setLoading(true);
+        const orderEndpoint = accountType === "farmer" ? "/orders/mine?type=purchases" : "/orders/mine";
+        const summaryEndpoint = accountType === "farmer" ? "/orders/summary?type=purchases" : "/orders/summary";
         const [ordersData, summaryData, notificationsData] = await Promise.all([
-          api("/orders/mine"),
-          api("/orders/summary"),
+          api(orderEndpoint),
+          api(summaryEndpoint),
           api("/orders/notifications"),
         ]);
 
@@ -68,14 +70,14 @@ function BuyerOrders() {
       window.removeEventListener("focus", loadOrdersData);
       window.clearInterval(refreshId);
     };
-  }, [accountType]);
+  }, [currentUser?.id, accountType]);
 
-  if (!currentUser || accountType !== "business") {
+  if (!currentUser) {
     return (
       <div className="auth-page">
         <div className="auth-card">
           <h1>Access denied</h1>
-          <p>Please log in as a business buyer to view your orders.</p>
+          <p>Please log in to view your orders.</p>
           <Link className="farmer-btn" to="/login">
             Go to Login
           </Link>

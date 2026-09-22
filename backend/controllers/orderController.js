@@ -447,7 +447,7 @@ export const getMyOrders = async (req, res) => {
     const userId = req.user.id;
     const accountType = req.user.accountType;
 
-    if (accountType === "farmer") {
+    if (accountType === "farmer" && req.query.type !== "purchases") {
       // Find all distinct orders that have items belonging to this farmer
       const [orders] = await pool.execute(
         `SELECT DISTINCT
@@ -477,7 +477,7 @@ export const getMyOrders = async (req, res) => {
          JOIN order_items oi ON oi.order_id = o.o_id
          JOIN users b ON o.business_id = b.u_id
          LEFT JOIN users d ON d.u_id = o.delivery_boy_id
-         WHERE oi.farmer_id = ? AND o.status NOT IN ('Cancelled', 'CANCELLED_BY_BUYER')
+         WHERE oi.farmer_id = ?
          ORDER BY o.created_at DESC, o.o_id DESC`,
         [userId]
       );
@@ -573,7 +573,7 @@ export const getMyOrders = async (req, res) => {
       });
 
       return res.json(results);
-    } else if (accountType === "business") {
+    } else if (accountType === "business" || accountType === "admin" || accountType === "farmer" || req.query.type === "purchases") {
       const [orders] = await pool.execute(
         `SELECT
            o.o_id AS id,
@@ -600,7 +600,7 @@ export const getMyOrders = async (req, res) => {
            o.created_at AS createdAt
          FROM orders o
          LEFT JOIN users d ON d.u_id = o.delivery_boy_id
-         WHERE o.business_id = ? AND o.status NOT IN ('Cancelled', 'CANCELLED_BY_BUYER')
+         WHERE o.business_id = ?
          ORDER BY o.created_at DESC, o.o_id DESC`,
         [userId]
       );
@@ -732,7 +732,7 @@ export const getOrderSummary = async (req, res) => {
         completedOrders: Number(summary.completedOrders || 0),
         completedTotal: Number(summary.completedTotal || 0),
       });
-    } else if (accountType === "business") {
+    } else if (accountType === "business" || accountType === "admin" || accountType === "farmer" || req.query.type === "purchases") {
       const [rows] = await pool.execute(
         `SELECT
            COUNT(*) AS totalOrders,

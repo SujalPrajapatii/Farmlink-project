@@ -11,14 +11,14 @@ const router = express.Router();
 router.get(
   "/",
   authMiddleware,
-  allowRoles("business"),
+  allowRoles("business", "farmer", "admin"),
   getMyAddresses
 );
 
 router.post(
   "/",
   authMiddleware,
-  allowRoles("business"),
+  allowRoles("business", "farmer", "admin"),
   createAddress
 );
 

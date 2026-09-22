@@ -14,7 +14,7 @@ const createToken = (user) => {
     },
     process.env.JWT_SECRET,
     {
-      expiresIn: "7d",
+      expiresIn: "30d",
     }
   );
 };
@@ -278,5 +278,36 @@ export const updateProfile = async (req, res) => {
   } catch (error) {
     console.error("Update profile error:", error);
     res.status(500).json({ message: "Could not update profile." });
+  }
+};
+
+// Check session validity and refresh user credentials
+export const verifySession = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const [users] = await pool.execute(
+      `SELECT u_id AS id, name, email, account_type AS accountType,
+              phone, vehicle_type AS vehicleType, vehicle_number AS vehicleNumber,
+              availability_status AS availabilityStatus,
+              current_latitude AS currentLatitude, current_longitude AS currentLongitude
+       FROM users WHERE u_id = ?`,
+      [userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    const user = users[0];
+    const token = createToken({ id: user.id, account_type: user.accountType });
+
+    res.json({
+      valid: true,
+      token,
+      user,
+    });
+  } catch (error) {
+    console.error("Verify session error:", error);
+    res.status(500).json({ message: "Session check failed." });
   }
 };

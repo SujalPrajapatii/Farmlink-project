@@ -28,6 +28,12 @@ Object.assign(gu, {
   "Delivery Rider / Partner":"ડિલિવરી રાઇડર / પાર્ટનર","Delivery Partner":"ડિલિવરી પાર્ટનર","Rider Dashboard":"રાઇડર ડેશબોર્ડ","Shift Status:":"શિફ્ટ સ્થિતિ:","Online":"ઓનલાઇન","Busy":"વ્યસ્ત","Offline":"ઑફલાઇન","Active Tasks":"સક્રિય કાર્યો","Delivered Today":"આજે પહોંચાડેલ","Total Completed":"કુલ પૂર્ણ","Estimated Payout":"અંદાજિત ચુકવણી","Start Live GPS Broadcast":"લાઇવ જીપીએસ પ્રસારણ શરૂ કરો","Broadcasting GPS (Live)":"જીપીએસ લાઇવ પ્રસારિત થઈ રહ્યું છે","Live GPS Delivery Route Map":"લાઇવ જીપીએસ ડિલિવરી રૂટ મેપ","Farm Pickup Point":"ખેતરથી પિકઅપ પોઇન્ટ","Buyer Delivery Destination":"ખરીદદાર ડિલિવરી સ્થળ","Call Farmer":"ખેડૂતને કૉલ કરો","Call Buyer":"ખરીદદારને કૉલ કરો","Call Delivery Partner":"ડિલિવરી પાર્ટનરને કૉલ કરો","Navigate to Farm ↗":"ખેતરનો રસ્તો જુઓ ↗","Navigate to Buyer ↗":"ખરીદદારનો રસ્તો જુઓ ↗","Confirm Pickup from Farm":"ખેતરથી પિકઅપ કન્ફર્મ કરો","Start Transit to Area":"વિસ્તાર માટે પરિવહન શરૂ કરો","Enter Buyer OTP & Complete Delivery":"ખરીદદાર ઓટીપી દાખલ કરી ડિલિવરી પૂર્ણ કરો","Delivery Fleet":"ડિલિવરી કાફલો","Dispatch Center":"ડિસ્પેચ સેન્ટર","Assign Rider":"રાઇડર સોંપો","Available Riders":"ઉપલબ્ધ રાઇડર્સ","Picked Up from Farm":"ખેતરમાંથી માલ લીધો","In Transit":"પરિવહનમાં","Delivery Boy Assigned":"ડિલિવરી બોય સોંપાયો",
   "Available Delivery Requests":"ઉપલબ્ધ ડિલિવરી વિનંતીઓ","LIVE RADAR BROADCAST":"લાઇવ રડાર પ્રસારણ","Accept Delivery":"ડિલિવરી સ્વીકારો","Deny":"ના પાડો","Navigate to Farmer":"ખેડૂત પાસે જાઓ","I have Reached Farmer":"હું ખેડૂત પાસે પહોંચી ગયો છું","Start Delivery (Picked Up)":"ડિલિવરી શરૂ કરો (માલ લીધો)","Start Delivery":"ડિલિવરી શરૂ કરો","Reached Farm":"ખેતરે પહોંચ્યા","Rider Going to Farm":"રાઇડર ખેતરે જઈ રહ્યો છે","Rider Arrived at Your Farm":"રાઇડર તમારા ખેતરે પહોંચી ગયો છે"
 });
+Object.assign(hi, {
+  "Search":"खोजें","Search Produce":"उपज खोजें","Popular:":"लोकप्रिय:","Quick Search:":"त्वरित खोज:","All Produce":"सभी उपज","Clear search":"खोज साफ़ करें","Clear Filter":"फ़िल्टर हटाएं","Tomatoes":"टमाटर","Potatoes":"आलू","Onions":"प्याज","Wheat":"गेहूं","Mangoes":"आम","Rice":"चावल"
+});
+Object.assign(gu, {
+  "Search":"શોધો","Search Produce":"ઉત્પાદન શોધો","Popular:":"લોકપ્રિય:","Quick Search:":"ઝડપી શોધ:","All Produce":"બધું ઉત્પાદન","Clear search":"શોધ સાફ કરો","Clear Filter":"ફિલ્ટર દૂર કરો","Tomatoes":"ટામેટાં","Potatoes":"બટાકા","Onions":"ડુંગળી","Wheat":"ઘઉં","Mangoes":"કેરી","Rice":"ચોખા"
+});
 const translations = { english: {}, hindi: hi, gujarati: gu };
 const languageCodes = { hindi: "hi", gujarati: "gu" };
 const automaticTranslations = new Map();

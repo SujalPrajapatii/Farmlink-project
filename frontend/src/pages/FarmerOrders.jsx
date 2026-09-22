@@ -273,9 +273,28 @@ function FarmerOrders() {
           >
             Delivered ({safeOrders.filter((o) => o.status === "Delivered").length})
           </button>
+          <button
+            className={`filter-btn ${statusFilter === "cancelled" ? "active" : ""}`}
+            onClick={() => setStatusFilter("cancelled")}
+          >
+            Cancelled ({safeOrders.filter((o) => ["Cancelled", "CANCELLED_BY_BUYER"].includes(o.status)).length})
+          </button>
         </div>
 
-        {error && <div className="admin-error">{error}</div>}
+        {error && (
+          <div className="admin-error" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>{error}</span>
+            {error.toLowerCase().includes("token") || error.toLowerCase().includes("login") ? (
+              <Link to="/login" style={{ padding: "4px 10px", background: "#b91c1c", color: "#fff", borderRadius: "4px", textDecoration: "none", fontSize: "12px", fontWeight: 600 }}>
+                Log in again
+              </Link>
+            ) : (
+              <button type="button" onClick={() => loadOrders(false)} style={{ padding: "4px 10px", background: "#b91c1c", color: "#fff", border: "none", borderRadius: "4px", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}>
+                Retry
+              </button>
+            )}
+          </div>
+        )}
 
         <section className="product-section">
           {loading && orders.length === 0 ? (

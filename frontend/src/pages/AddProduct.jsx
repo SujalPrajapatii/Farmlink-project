@@ -1,6 +1,6 @@
-import { api } from "../api";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { api } from "../api";
 import { getDefaultProduceImage, handleImageError } from "../productImages";
 
 function AddProduct() {
@@ -18,18 +18,58 @@ function AddProduct() {
     price: "",
     location: "",
     image: "",
-    tier1DiscountPct: "10",
-    tier2DiscountPct: "20",
   });
 
   const autoImage = getDefaultProduceImage(formData.category, formData.name);
   const displayImage = formData.image?.trim() || autoImage;
 
   function handleChange(event) {
-    setFormData({
-      ...formData,
-      [event.target.name]: event.target.value,
-    });
+    const { name, value } = event.target;
+
+    if (name === "name") {
+      const lower = value.toLowerCase();
+      let autoCategory = "";
+
+      const fruitKeywords = [
+        "apple", "banana", "mango", "orange", "santra", "grape", "angoor",
+        "watermelon", "tarbooz", "melon", "papaya", "pineapple", "guava",
+        "amrood", "pomegranate", "strawberry", "berry", "coconut", "lemon",
+        "citrus", "lime"
+      ];
+      const grainKeywords = [
+        "wheat", "gehu", "atta", "flour", "rice", "chawal", "paddy",
+        "basmati", "corn", "maize", "makka", "barley", "jowar", "bajra",
+        "millet", "ragi", "oats"
+      ];
+      const pulseKeywords = [
+        "pulse", "dal", "daal", "lentil", "chana", "chickpea", "moong",
+        "toor", "urad", "rajma", "beans", "soya", "soyabean", "soybean", "gram"
+      ];
+      const vegKeywords = [
+        "tomato", "tamatar", "potato", "aloo", "batata", "onion", "pyaz",
+        "kanda", "carrot", "gajar", "spinach", "palak", "cabbage", "cauliflower",
+        "gobi", "chilli", "mirchi", "garlic", "lahsun", "ginger", "adrak",
+        "brinjal", "baingan", "cucumber", "kheera", "ladyfinger", "bhindi",
+        "okra", "peas", "matar", "pumpkin", "kaddu", "lauki", "radish",
+        "mooli", "mushroom", "beetroot"
+      ];
+
+      if (fruitKeywords.some((k) => lower.includes(k))) autoCategory = "Fruits";
+      else if (grainKeywords.some((k) => lower.includes(k))) autoCategory = "Grains";
+      else if (pulseKeywords.some((k) => lower.includes(k))) autoCategory = "Pulses";
+      else if (vegKeywords.some((k) => lower.includes(k))) autoCategory = "Vegetables";
+
+      setFormData((prev) => ({
+        ...prev,
+        name: value,
+        category: autoCategory || prev.category,
+      }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        [name]: value,
+      }));
+    }
   }
 
   async function handleSubmit(event) {
@@ -55,10 +95,10 @@ function AddProduct() {
 
   if (!currentUser || currentUser.accountType !== "farmer") {
     return (
-      <div className="auth-page auth-showcase-page">
+      <div className="auth-page">
         <div className="auth-card">
           <h1>Access denied</h1>
-          <p>Please log in as a farmer to add crop listings.</p>
+          <p>Please log in as a farmer to add products.</p>
           <Link className="farmer-btn" to="/login">
             Go to Login
           </Link>
@@ -72,25 +112,35 @@ function AddProduct() {
       <div className="auth-showcase auth-showcase-product">
         <section className="auth-brand-panel">
           <div className="auth-brand-content">
-            <Link className="auth-brand-logo" to="/">Farm<span>Link</span></Link>
+            <Link className="auth-brand-logo" to="/">
+              Farm<span>Link</span>
+            </Link>
             <div className="auth-brand-copy">
-              <span className="auth-leaf">🌱</span>
-              <h2>List your harvest.<br />Reach active buyers.</h2>
-              <p>Post your fresh farm produce directly to verified business buyers across India with zero middlemen.</p>
+              <span className="auth-leaf">🌾</span>
+              <h2>Fresh harvest.<br />Direct to market.</h2>
+              <p>
+                List your produce directly from your farm and connect with
+                verified buyers across the region.
+              </p>
             </div>
-            <span className="auth-brand-caption">DIRECT SELLING · FAIR PRICING</span>
+            <span className="auth-brand-caption">
+              FARM FRESH · DIRECT TRADE
+            </span>
           </div>
         </section>
 
-        <form className="auth-card auth-showcase-form auth-product-form" onSubmit={handleSubmit}>
+        <form
+          className="auth-card auth-showcase-form auth-product-form"
+          onSubmit={handleSubmit}
+        >
           <Link className="back-link" to="/farmer-dashboard">
             ← Back to Dashboard
           </Link>
 
           <div className="auth-form-heading">
-            <span>FARMER MARKETPLACE</span>
-            <h1>Add New Product</h1>
-            <p>Enter crop specifications and pricing for businesses.</p>
+            <span>NEW LISTING</span>
+            <h1>Add Product</h1>
+            <p>Add your crop details for businesses to find.</p>
           </div>
 
           <label>Product Name</label>
@@ -157,59 +207,13 @@ function AddProduct() {
                 onChange={handleChange}
                 placeholder="Example: 30"
                 min="1"
+                step="0.01"
                 required
               />
             </div>
           </div>
 
-          <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "12px", padding: "14px 16px", margin: "14px 0 10px" }}>
-            <strong style={{ display: "block", color: "#166534", marginBottom: "4px", fontSize: "14px" }}>
-              🏷️ Wholesale Bulk Discounts (Percentage)
-            </strong>
-            <p style={{ margin: "0 0 12px", fontSize: "12px", color: "#64748b" }}>
-              Encourage buyers to purchase in larger volumes by setting percentage discounts on quantity tiers.
-            </p>
-
-            <div className="auth-two-fields">
-              <div>
-                <label style={{ fontSize: "12px" }}>51–200 {formData.unit} (% OFF)</label>
-                <input
-                  type="number"
-                  name="tier1DiscountPct"
-                  min="0"
-                  max="90"
-                  value={formData.tier1DiscountPct}
-                  onChange={handleChange}
-                  placeholder="10"
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: "12px" }}>201+ {formData.unit} (% OFF)</label>
-                <input
-                  type="number"
-                  name="tier2DiscountPct"
-                  min="0"
-                  max="90"
-                  value={formData.tier2DiscountPct}
-                  onChange={handleChange}
-                  placeholder="20"
-                />
-              </div>
-            </div>
-
-            {formData.price && Number(formData.price) > 0 && (
-              <div style={{ background: "#fff", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "8px 12px", marginTop: "10px", fontSize: "12px", color: "#334155" }}>
-                <span style={{ fontWeight: 700, color: "#1e293b" }}>Calculated Selling Rates:</span>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px", marginTop: "6px" }}>
-                  <div>1–50 {formData.unit}: <strong>₹{Number(formData.price).toFixed(2)}</strong></div>
-                  <div>51–200 {formData.unit}: <strong style={{ color: "#15803d" }}>₹{(Number(formData.price) * (1 - (Number(formData.tier1DiscountPct) || 0) / 100)).toFixed(2)}</strong> <small style={{ color: "#16a34a" }}>({formData.tier1DiscountPct || 0}% off)</small></div>
-                  <div>201+ {formData.unit}: <strong style={{ color: "#15803d" }}>₹{(Number(formData.price) * (1 - (Number(formData.tier2DiscountPct) || 0) / 100)).toFixed(2)}</strong> <small style={{ color: "#16a34a" }}>({formData.tier2DiscountPct || 0}% off)</small></div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <label>Location / Farm Origin</label>
+          <label>Location</label>
           <input
             type="text"
             name="location"
@@ -224,12 +228,18 @@ function AddProduct() {
             <img
               src={displayImage}
               alt="Product preview"
-              onError={(e) => handleImageError(e, formData.category, formData.name)}
+              onError={(e) =>
+                handleImageError(e, formData.category, formData.name)
+              }
             />
             <div className="auth-preview-info">
-              <strong>{formData.name.trim() || formData.category}</strong>
+              <strong>
+                {formData.name.trim() || formData.category || "Produce Preview"}
+              </strong>
               <small>
-                {formData.image?.trim() ? "✓ Using custom image URL" : "✨ Auto-selected by crop type & category"}
+                {formData.image?.trim()
+                  ? "✓ Using custom photo URL"
+                  : "✨ Auto-selected by crop type & category"}
               </small>
             </div>
           </div>
@@ -240,11 +250,11 @@ function AddProduct() {
             name="image"
             value={formData.image}
             onChange={handleChange}
-            placeholder="Leave blank to use auto-selected photo"
+            placeholder="Leave blank to use the auto-selected photo above"
           />
 
           <button className="farmer-btn" type="submit">
-            Add Product <span>+</span>
+            Add Product <span>→</span>
           </button>
         </form>
       </div>
@@ -252,4 +262,4 @@ function AddProduct() {
   );
 }
 
-export default AddProduct;
+export default AddProduct;

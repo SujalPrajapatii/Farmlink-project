@@ -26,6 +26,16 @@ export async function api(path, options = {}) {
     );
   }
 
+  // If backend issued a refreshed token, update client storage immediately
+  const refreshedToken = response.headers.get("X-Refreshed-Token");
+  if (refreshedToken) {
+    try {
+      localStorage.setItem("farmlinkToken", refreshedToken);
+    } catch {
+      // Storage failure safeguard
+    }
+  }
+
   let data = null;
   if (response.status !== 204) {
     const body = await response.text();
@@ -37,6 +47,29 @@ export async function api(path, options = {}) {
   }
 
   if (!response.ok) {
+    if (
+      response.status === 401 &&
+      !path.includes("/auth/login") &&
+      !path.includes("/auth/register")
+    ) {
+      // Token is permanently invalid or expired beyond refresh
+      localStorage.removeItem("farmlinkToken");
+      localStorage.removeItem("farmlinkCurrentUser");
+
+      if (
+        typeof window !== "undefined" &&
+        window.location.pathname !== "/login" &&
+        window.location.pathname !== "/register" &&
+        window.location.pathname !== "/"
+      ) {
+        setTimeout(() => {
+          if (!window.location.pathname.includes("/login")) {
+            window.location.href = "/login?expired=1";
+          }
+        }, 150);
+      }
+    }
+
     throw new Error(data?.message || "Request failed.");
   }
 

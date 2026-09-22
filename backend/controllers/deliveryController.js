@@ -323,6 +323,18 @@ export const acceptDeliveryOrder = async (req, res) => {
       ]
     );
 
+    // 8. Notify Rider
+    await connection.execute(
+      `INSERT INTO order_notifications (user_id, order_id, type, title, message)
+       VALUES (?, ?, 'ORDER_ACCEPTED_RIDER', 'Pickup Accepted', ?)
+       ON DUPLICATE KEY UPDATE message = VALUES(message), is_read = FALSE, created_at = CURRENT_TIMESTAMP`,
+      [
+        riderId,
+        orderId,
+        `You accepted Order #${orderId}. Proceed to the farm location for harvest pickup.`,
+      ]
+    );
+
     await connection.commit();
     transactionStarted = false;
 
@@ -790,6 +802,17 @@ export const updateDeliveryWorkflowStatus = async (req, res) => {
           `Delivery partner ${order.riderName} has arrived at the farm for harvest pickup.`,
         ]
       );
+      // Notify Rider
+      await connection.execute(
+        `INSERT INTO order_notifications (user_id, order_id, type, title, message)
+         VALUES (?, ?, 'RIDER_ARRIVED_FARM', 'Arrived at Farm', ?)
+         ON DUPLICATE KEY UPDATE message = VALUES(message), is_read = FALSE, created_at = CURRENT_TIMESTAMP`,
+        [
+          riderId,
+          orderId,
+          `You have arrived at the farm for Order #${orderId}. Inspect produce and coordinate handover with the farmer.`,
+        ]
+      );
     } else if (status === "In Transit" || status === "Picked Up") {
       // Notify Buyer
       await connection.execute(
@@ -815,6 +838,17 @@ export const updateDeliveryWorkflowStatus = async (req, res) => {
           ]
         );
       }
+      // Notify Rider
+      await connection.execute(
+        `INSERT INTO order_notifications (user_id, order_id, type, title, message)
+         VALUES (?, ?, 'ORDER_IN_TRANSIT', 'Produce In Transit', ?)
+         ON DUPLICATE KEY UPDATE message = VALUES(message), is_read = FALSE, created_at = CURRENT_TIMESTAMP`,
+        [
+          riderId,
+          orderId,
+          `Order #${orderId} collected from farm and is now in transit towards buyer. Collect OTP on delivery.`,
+        ]
+      );
     } else if (status === "Out for Delivery") {
       // Notify Buyer with OTP
       await connection.execute(
@@ -825,6 +859,17 @@ export const updateDeliveryWorkflowStatus = async (req, res) => {
           order.business_id,
           orderId,
           `Your order #${orderId} is out for delivery! Your secret delivery confirmation OTP is ${activeOtp}. Please share this code with ${order.riderName} upon arrival.`,
+        ]
+      );
+      // Notify Rider
+      await connection.execute(
+        `INSERT INTO order_notifications (user_id, order_id, type, title, message)
+         VALUES (?, ?, 'ORDER_OUT_FOR_DELIVERY', 'Out for Delivery', ?)
+         ON DUPLICATE KEY UPDATE message = VALUES(message), is_read = FALSE, created_at = CURRENT_TIMESTAMP`,
+        [
+          riderId,
+          orderId,
+          `Out for final delivery for Order #${orderId}. Enter buyer's 4-digit OTP to complete drop.`,
         ]
       );
     } else if (status === "Delivered") {
@@ -852,6 +897,17 @@ export const updateDeliveryWorkflowStatus = async (req, res) => {
           ]
         );
       }
+      // Notify Rider
+      await connection.execute(
+        `INSERT INTO order_notifications (user_id, order_id, type, title, message)
+         VALUES (?, ?, 'ORDER_DELIVERED', 'Delivery Completed', ?)
+         ON DUPLICATE KEY UPDATE message = VALUES(message), is_read = FALSE, created_at = CURRENT_TIMESTAMP`,
+        [
+          riderId,
+          orderId,
+          `Order #${orderId} successfully delivered to ${order.buyerName}! Confirmed with buyer OTP. Delivery payout recorded.`,
+        ]
+      );
     }
 
     await connection.commit();

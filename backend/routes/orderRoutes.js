@@ -35,7 +35,7 @@ router.get("/:id/tracking", authMiddleware, getOrderTracking);
 router.post(
   "/",
   authMiddleware,
-  allowRoles("business"),
+  allowRoles("business", "farmer", "admin"),
   placeOrder
 );
 
@@ -49,7 +49,7 @@ router.patch(
 router.post(
   "/cart",
   authMiddleware,
-  allowRoles("business"),
+  allowRoles("business", "farmer", "admin"),
   placeCartOrder
 );
 

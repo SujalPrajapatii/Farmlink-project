@@ -15,6 +15,15 @@ export default function BuyerNotifications() {
   const [search, setSearch] = useState("");
   const [dismissingId, setDismissingId] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [cart] = useState(() =>
+    JSON.parse(localStorage.getItem("farmlinkCart") || "[]")
+  );
+
+  const handleLogout = () => {
+    localStorage.removeItem("farmlinkToken");
+    localStorage.removeItem("farmlinkCurrentUser");
+    navigate("/login");
+  };
 
   const loadNotifications = useCallback(async (isSilent = false) => {
     try {
@@ -29,12 +38,12 @@ export default function BuyerNotifications() {
   }, []);
 
   useEffect(() => {
-    if (accountType === "business") {
+    if (currentUser) {
       loadNotifications();
       const interval = setInterval(() => loadNotifications(true), 6000);
       return () => clearInterval(interval);
     }
-  }, [accountType, loadNotifications]);
+  }, [currentUser?.id, loadNotifications]);
 
   // Dismiss / Delete single notification when "✕" is clicked
   async function handleDismiss(e, notificationId) {
@@ -157,8 +166,25 @@ export default function BuyerNotifications() {
   };
 
   return (
-    <div className="notifications-page buyer-notifications-page">
-      <div className="notifications-container">
+    <div className="dashboard-page buyer-notifications-page">
+      <aside className="sidebar">
+        <h2>🌱 FarmLink</h2>
+        <Link to="/" className="sidebar-nav-item">🏠 Home</Link>
+        <Link to="/business-dashboard" className="sidebar-nav-item">🌾 Marketplace</Link>
+        <Link to="/my-orders" className="sidebar-nav-item">📦 My Orders</Link>
+        <button type="button" className="sidebar-nav-item" onClick={() => navigate("/checkout", { state: { cart } })}>
+          🛒 Cart {cart.length > 0 && <span className="nav-count-badge">{cart.length}</span>}
+        </button>
+        <Link to="/notifications" className="sidebar-nav-item is-active">
+          🔔 Notifications {unreadCount > 0 && <span className="nav-count-badge alert">{unreadCount}</span>}
+        </Link>
+        <button className="sidebar-logout" onClick={handleLogout}>
+          Logout
+        </button>
+      </aside>
+
+      <main className="dashboard-content">
+        <div className="notifications-container">
         {/* Top Header Row */}
         <header className="notifications-header">
           <div className="header-left">
@@ -330,6 +356,7 @@ export default function BuyerNotifications() {
           </div>
         )}
       </div>
+      </main>
     </div>
   );
 }

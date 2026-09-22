@@ -26,6 +26,18 @@ function CategoryProducts() {
   const [error, setError] = useState("");
   const [quantity, setQuantity] = useState({});
   const [cart, setCart] = useState(() => JSON.parse(localStorage.getItem("farmlinkCart") || "[]"));
+  const [search, setSearch] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get("search") || "";
+  });
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const query = params.get("search");
+    if (query !== null) {
+      setSearch(query);
+    }
+  }, [location.search]);
 
   const normalizedKey = getCategoryKey(category);
   const categoryName = categoryNames[normalizedKey] || categoryNames[category?.toLowerCase()] || category;
@@ -49,7 +61,7 @@ function CategoryProducts() {
 
   function handleAddToCart(product) {
     if (!currentUser) {
-      alert("Please log in as a buyer to add products to your cart.");
+      alert("Please log in to add products to your cart.");
       navigate("/login", { state: { from: location } });
       return;
     }
@@ -71,7 +83,7 @@ function CategoryProducts() {
 
   function handleBuyNow(product) {
     if (!currentUser) {
-      alert("Please log in as a buyer to buy products.");
+      alert("Please log in to purchase produce.");
       navigate("/login", { state: { from: location } });
       return;
     }
@@ -107,8 +119,13 @@ function CategoryProducts() {
   }, []);
 
   const categoryProducts = useMemo(
-    () => products.filter((product) => categoryMatches(product.category, category)),
-    [products, category]
+    () => products.filter((product) => {
+      const matchesCategory = categoryMatches(product.category, category);
+      const searchableText = `${product.name} ${product.category} ${product.location}`.toLowerCase();
+      const matchesSearch = !search || searchableText.includes(search.toLowerCase());
+      return matchesCategory && matchesSearch;
+    }),
+    [products, category, search]
   );
 
   return (
@@ -173,7 +190,13 @@ function CategoryProducts() {
           </div>
         </div>
 
-        <div className="market-category-pills" style={{ marginBottom: "30px" }} aria-label="Category Switcher">
+        <div className="market-category-pills" style={{ marginBottom: "20px" }} aria-label="Category Switcher">
+          <button
+            className={normalizedKey === "all" || category === "all" ? "is-active" : ""}
+            onClick={() => navigate("/categories/all")}
+          >
+            All Produce
+          </button>
           {["vegetables", "fruits", "grains", "pulses"].map((catKey) => {
             const isActive = normalizedKey === catKey;
             return (
@@ -186,6 +209,53 @@ function CategoryProducts() {
               </button>
             );
           })}
+        </div>
+
+        <div className="category-search-bar" style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "30px", flexWrap: "wrap" }}>
+          <div style={{ position: "relative", flex: "1", minWidth: "260px", maxWidth: "480px" }}>
+            <span style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", color: "#64748b", fontSize: "15px" }}>🔍</span>
+            <input
+              type="search"
+              placeholder={`Search in ${categoryName.toLowerCase()} or by location...`}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "10px 36px 10px 40px",
+                borderRadius: "999px",
+                border: "1px solid #cbd5e1",
+                fontSize: "14px",
+                outline: "none",
+                background: "#ffffff",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.04)"
+              }}
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                style={{
+                  position: "absolute",
+                  right: "12px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#94a3b8",
+                  fontSize: "14px"
+                }}
+                aria-label="Clear search"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          {search && (
+            <span style={{ fontSize: "13px", color: "#065f46", background: "#ecfdf5", padding: "6px 14px", borderRadius: "999px", border: "1px solid #a7f3d0", fontWeight: 600 }}>
+              {categoryProducts.length} result{categoryProducts.length === 1 ? "" : "s"} for "{search}"
+            </span>
+          )}
         </div>
 
         {loading && <p className="category-message">Loading fresh crops...</p>}
@@ -204,8 +274,18 @@ function CategoryProducts() {
         {!loading && !error && categoryProducts.length === 0 && (
           <div className="empty-product">
             <div>🧺</div>
-            <h3>No {categoryName?.toLowerCase()} available yet</h3>
-            <p>Farmers have not added products in this category yet. Please check back soon or explore other categories above.</p>
+            <h3>No products found {search ? `matching "${search}"` : `in ${categoryName?.toLowerCase()}`}</h3>
+            <p>{search ? "Try checking spelling, removing filters, or searching for another crop." : "Farmers have not added products in this category yet. Please check back soon or explore other categories above."}</p>
+            {search && (
+              <button
+                type="button"
+                className="farmer-btn"
+                style={{ marginTop: "12px", display: "inline-block" }}
+                onClick={() => setSearch("")}
+              >
+                Clear search
+              </button>
+            )}
           </div>
         )}
 

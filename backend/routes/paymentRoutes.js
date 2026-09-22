@@ -13,7 +13,7 @@ const router = express.Router();
 router.post(
   "/orders/:id/create",
   authMiddleware,
-  allowRoles("business"),
+  allowRoles("business", "farmer", "admin"),
   createOnlinePayment
 );
 
@@ -21,7 +21,7 @@ router.post(
 router.post(
   "/orders/:id/verify",
   authMiddleware,
-  allowRoles("business"),
+  allowRoles("business", "farmer", "admin"),
   verifyOnlinePayment
 );
 

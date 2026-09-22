@@ -12,7 +12,7 @@ import {
 
 const router = express.Router();
 
-router.get("/", authMiddleware, getAllProducts);
+router.get("/", getAllProducts);
 
 router.get(
   "/mine",

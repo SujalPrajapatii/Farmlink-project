@@ -59,6 +59,7 @@ app.use(
       return callback(new Error("This website is not allowed to access the API."));
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    exposedHeaders: ["X-Refreshed-Token"],
   })
 );
 

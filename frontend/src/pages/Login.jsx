@@ -75,6 +75,11 @@ function Login() {
             <h1>Log in to FarmLink</h1>
             <p>Enter your details to access your dashboard.</p>
           </div>
+          {location.search.includes("expired=1") && (
+            <div style={{ padding: "10px 14px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", color: "#b91c1c", fontSize: "13px", marginBottom: "16px" }}>
+              Your session has expired. Please log in again to continue.
+            </div>
+          )}
           <label>Email Address</label>
           <input type="email" name="email" value={formData.email} onChange={handleChange} placeholder="name@example.com" required />
           <label>Password</label>

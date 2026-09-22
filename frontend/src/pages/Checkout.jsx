@@ -46,9 +46,9 @@ function Checkout() {
     isDefault: false,
   });
 
-  // Load saved addresses when a business buyer opens Checkout.
+  // Load saved addresses when any authenticated buyer/farmer/admin opens Checkout.
   useEffect(() => {
-    if (accountType !== "business") return;
+    if (!currentUser) return;
 
     async function loadAddresses() {
       try {
@@ -69,15 +69,15 @@ function Checkout() {
     }
 
     loadAddresses();
-  }, [accountType]);
+  }, [currentUser?.id]);
 
-  // This page is only for business buyers.
-  if (!currentUser || accountType !== "business") {
+  // This page requires login.
+  if (!currentUser) {
     return (
       <div className="auth-page">
         <div className="auth-card">
-          <h1>Access denied</h1>
-          <p>Please log in as a business buyer to continue.</p>
+          <h1>Login required</h1>
+          <p>Please log in to continue with your checkout.</p>
 
           <Link className="farmer-btn" to="/login">
             Go to Login
@@ -266,7 +266,7 @@ function Checkout() {
         );
 
         localStorage.removeItem("farmlinkCart");
-        navigate("/business-dashboard");
+        navigate(currentUser?.accountType === "farmer" ? "/farmer-orders" : "/buyer-orders");
         return;
       }
 
@@ -278,7 +278,7 @@ function Checkout() {
       );
 
       localStorage.removeItem("farmlinkCart");
-      navigate("/business-dashboard");
+      navigate(currentUser?.accountType === "farmer" ? "/farmer-orders" : "/buyer-orders");
     } catch (error) {
       alert(error.message);
     } finally {
