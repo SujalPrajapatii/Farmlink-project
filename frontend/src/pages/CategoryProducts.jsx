@@ -60,9 +60,11 @@ function CategoryProducts() {
   }
 
   function handleAddToCart(product) {
-    if (!currentUser) {
-      alert("Please log in to add products to your cart.");
-      navigate("/login", { state: { from: location } });
+    if (!currentUser || currentUser.accountType !== "business") {
+      alert("Please login as buyer to purchase.");
+      if (!currentUser) {
+        navigate("/login", { state: { from: location } });
+      }
       return;
     }
 
@@ -82,9 +84,11 @@ function CategoryProducts() {
   }
 
   function handleBuyNow(product) {
-    if (!currentUser) {
-      alert("Please log in to purchase produce.");
-      navigate("/login", { state: { from: location } });
+    if (!currentUser || currentUser.accountType !== "business") {
+      alert("Please login as buyer to purchase.");
+      if (!currentUser) {
+        navigate("/login", { state: { from: location } });
+      }
       return;
     }
 

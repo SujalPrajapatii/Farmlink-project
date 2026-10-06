@@ -142,7 +142,8 @@ export const login = async (req, res) => {
       `SELECT u_id AS id, name, email, password_hash, account_type,
               phone, vehicle_type AS vehicleType, vehicle_number AS vehicleNumber,
               availability_status AS availabilityStatus,
-              current_latitude AS currentLatitude, current_longitude AS currentLongitude
+              current_latitude AS currentLatitude, current_longitude AS currentLongitude,
+              is_deleted AS isDeleted, removal_reason AS removalReason
        FROM users WHERE email = ?`,
       [cleanEmail]
     );
@@ -153,6 +154,12 @@ export const login = async (req, res) => {
     if (!user) {
       return res.status(401).json({
         message: "Invalid email or password.",
+      });
+    }
+
+    if (user.isDeleted) {
+      return res.status(403).json({
+        message: `This account has been removed by the administrator. Reason: ${user.removalReason || "Account deactivated."}`,
       });
     }
 
@@ -207,13 +214,13 @@ export const getProfile = async (req, res) => {
               phone, vehicle_type AS vehicleType, vehicle_number AS vehicleNumber,
               availability_status AS availabilityStatus,
               current_latitude AS currentLatitude, current_longitude AS currentLongitude,
-              created_at AS createdAt
+              created_at AS createdAt, is_deleted AS isDeleted, removal_reason AS removalReason
        FROM users WHERE u_id = ?`,
       [userId]
     );
 
-    if (users.length === 0) {
-      return res.status(404).json({ message: "User not found." });
+    if (users.length === 0 || users[0].isDeleted) {
+      return res.status(404).json({ message: "User not found or account removed." });
     }
 
     res.json(users[0]);
@@ -289,13 +296,14 @@ export const verifySession = async (req, res) => {
       `SELECT u_id AS id, name, email, account_type AS accountType,
               phone, vehicle_type AS vehicleType, vehicle_number AS vehicleNumber,
               availability_status AS availabilityStatus,
-              current_latitude AS currentLatitude, current_longitude AS currentLongitude
+              current_latitude AS currentLatitude, current_longitude AS currentLongitude,
+              is_deleted AS isDeleted, removal_reason AS removalReason
        FROM users WHERE u_id = ?`,
       [userId]
     );
 
-    if (users.length === 0) {
-      return res.status(404).json({ message: "User not found." });
+    if (users.length === 0 || users[0].isDeleted) {
+      return res.status(404).json({ message: "User not found or account removed." });
     }
 
     const user = users[0];

@@ -1,4 +1,5 @@
 import pool from "./db.js";
+import { ensureModularSchema } from "./modularSchemaMigration.js";
 
 // Keeps existing FarmLink databases compatible when order tracking and delivery features are added.
 // It is safe to run every time the API starts.
@@ -287,5 +288,26 @@ export async function ensureOrderTrackingSchema() {
       INDEX idx_rro_rider (rider_id)
     ) ENGINE=InnoDB
   `);
+
+  // User removal columns for admin management (soft delete with reason)
+  const userRemovalColumns = [
+    ["is_deleted", "TINYINT(1) NOT NULL DEFAULT 0"],
+    ["removal_reason", "VARCHAR(255) NULL"],
+    ["removed_at", "TIMESTAMP NULL"],
+  ];
+  for (const [column, definition] of userRemovalColumns) {
+    const [existing] = await pool.execute(
+      `SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'users' AND column_name = ?`,
+      [column]
+    );
+    if (existing.length === 0) {
+      await pool.execute(`ALTER TABLE users ADD COLUMN ${column} ${definition}`);
+    }
+  }
+
+  // Ensure clean modular normalized tables exist and are populated
+  await ensureModularSchema();
 }
+
+
 

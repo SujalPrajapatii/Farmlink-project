@@ -26,9 +26,9 @@ export const createProduct = async (req, res) => {
       price,
       location,
       image,
-      tier1MinQty = 51,
+      tier1MinQty = 50,
       tier1DiscountPct = 10,
-      tier2MinQty = 201,
+      tier2MinQty = 200,
       tier2DiscountPct = 20,
     } = req.body;
 
@@ -75,16 +75,37 @@ export const createProduct = async (req, res) => {
         Number(price),
         location.trim(),
         isNonEmptyString(image) ? image.trim() : null,
-        Number(tier1MinQty) || 51,
+        Number(tier1MinQty) || 50,
         Number(tier1DiscountPct) || 10,
-        Number(tier2MinQty) || 201,
+        Number(tier2MinQty) || 200,
         Number(tier2DiscountPct) || 20,
       ]
     );
 
+    const newProductId = result.insertId;
+
+    // Synchronize normalized product_tier_pricing table
+    try {
+      await pool.execute(
+        `INSERT INTO product_tier_pricing (product_id, tier_level, min_quantity, discount_pct)
+         VALUES (?, 1, ?, ?), (?, 2, ?, ?)
+         ON DUPLICATE KEY UPDATE min_quantity = VALUES(min_quantity), discount_pct = VALUES(discount_pct)`,
+        [
+          newProductId,
+          Number(tier1MinQty) || 50,
+          Number(tier1DiscountPct) || 10,
+          newProductId,
+          Number(tier2MinQty) || 200,
+          Number(tier2DiscountPct) || 20,
+        ]
+      );
+    } catch (tierErr) {
+      console.error("Tier pricing sync error on create:", tierErr);
+    }
+
     return res.status(201).json({
       message: "Product added successfully.",
-      productId: result.insertId,
+      productId: newProductId,
     });
   } catch (error) {
     console.error("Create product error:", error);
@@ -108,9 +129,9 @@ export const getAllProducts = async (req, res) => {
         p.price,
         p.location,
         p.image_url AS image,
-        COALESCE(p.tier1_min_qty, 51) AS tier1MinQty,
+        COALESCE(p.tier1_min_qty, 50) AS tier1MinQty,
         COALESCE(p.tier1_discount_pct, 10) AS tier1DiscountPct,
-        COALESCE(p.tier2_min_qty, 201) AS tier2MinQty,
+        COALESCE(p.tier2_min_qty, 200) AS tier2MinQty,
         COALESCE(p.tier2_discount_pct, 20) AS tier2DiscountPct,
         p.created_at AS createdAt,
         u.name AS ownerName
@@ -145,9 +166,9 @@ export const getMyProducts = async (req, res) => {
         price,
         location,
         image_url AS image,
-        COALESCE(tier1_min_qty, 51) AS tier1MinQty,
+        COALESCE(tier1_min_qty, 50) AS tier1MinQty,
         COALESCE(tier1_discount_pct, 10) AS tier1DiscountPct,
-        COALESCE(tier2_min_qty, 201) AS tier2MinQty,
+        COALESCE(tier2_min_qty, 200) AS tier2MinQty,
         COALESCE(tier2_discount_pct, 20) AS tier2DiscountPct,
         created_at AS createdAt
       FROM products
@@ -240,9 +261,9 @@ export const updateProduct = async (req, res) => {
         Number(price),
         location.trim(),
         isNonEmptyString(image) ? image.trim() : null,
-        Number(tier1MinQty) || 51,
+        Number(tier1MinQty) || 50,
         Number(tier1DiscountPct) || 10,
-        Number(tier2MinQty) || 201,
+        Number(tier2MinQty) || 200,
         Number(tier2DiscountPct) || 20,
         productId,
         farmerId,
@@ -253,6 +274,25 @@ export const updateProduct = async (req, res) => {
       return res.status(404).json({
         message: "Product not found or you cannot edit it.",
       });
+    }
+
+    // Synchronize normalized product_tier_pricing table
+    try {
+      await pool.execute(
+        `INSERT INTO product_tier_pricing (product_id, tier_level, min_quantity, discount_pct)
+         VALUES (?, 1, ?, ?), (?, 2, ?, ?)
+         ON DUPLICATE KEY UPDATE min_quantity = VALUES(min_quantity), discount_pct = VALUES(discount_pct)`,
+        [
+          productId,
+          Number(tier1MinQty) || 50,
+          Number(tier1DiscountPct) || 10,
+          productId,
+          Number(tier2MinQty) || 200,
+          Number(tier2DiscountPct) || 20,
+        ]
+      );
+    } catch (tierErr) {
+      console.error("Tier pricing sync error on update:", tierErr);
     }
 
     return res.json({

@@ -6,9 +6,9 @@ export function getTierPricing(product, quantity = 1) {
 
   // Tier 1: 51 - 200 units (10% discount default)
   // Tier 2: 201+ units (20% discount default)
-  const tier1Min = Number(product?.tier1MinQty ?? product?.tier1_min_qty ?? 51);
+  const tier1Min = Number(product?.tier1MinQty ?? product?.tier1_min_qty ?? 50);
   const tier1Pct = Number(product?.tier1DiscountPct ?? product?.tier1_discount_pct ?? 10);
-  const tier2Min = Number(product?.tier2MinQty ?? product?.tier2_min_qty ?? 201);
+  const tier2Min = Number(product?.tier2MinQty ?? product?.tier2_min_qty ?? 200);
   const tier2Pct = Number(product?.tier2DiscountPct ?? product?.tier2_discount_pct ?? 20);
 
   let discountPct = 0;
@@ -21,7 +21,7 @@ export function getTierPricing(product, quantity = 1) {
     tierBadge = `${tier2Pct}% OFF`;
   } else if (qty >= tier1Min && tier1Pct > 0) {
     discountPct = tier1Pct;
-    activeTierLabel = `Wholesale Tier (${tier1Pct}% OFF for ${tier1Min}-${tier2Min - 1} ${unit})`;
+    activeTierLabel = `Wholesale Tier (${tier1Pct}% OFF for ${tier1Min}-${Math.max(tier1Min, tier2Min - 1)} ${unit})`;
     tierBadge = `${tier1Pct}% OFF`;
   }
 

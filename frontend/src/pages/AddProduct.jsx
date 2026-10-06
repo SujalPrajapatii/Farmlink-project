@@ -18,6 +18,10 @@ function AddProduct() {
     price: "",
     location: "",
     image: "",
+    tier1MinQty: "50",
+    tier1DiscountPct: "10",
+    tier2MinQty: "200",
+    tier2DiscountPct: "20",
   });
 
   const autoImage = getDefaultProduceImage(formData.category, formData.name);
@@ -222,6 +226,111 @@ function AddProduct() {
             placeholder="Example: Nashik, Maharashtra"
             required
           />
+
+          {/* Wholesale Bulk Discounts & Quantity Ranges */}
+          <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "12px", padding: "16px 18px", margin: "16px 0 14px" }}>
+            <strong style={{ display: "block", color: "#166534", marginBottom: "4px", fontSize: "14px" }}>
+              🏷️ Wholesale Bulk Discount Ranges
+            </strong>
+            <p style={{ margin: "0 0 14px", fontSize: "12px", color: "#64748b" }}>
+              Set quantity ranges and percentage discounts to attract bulk commercial buyers.
+            </p>
+
+            {/* Tier 1 Range */}
+            <div style={{ background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "12px", marginBottom: "12px" }}>
+              <div style={{ fontWeight: "700", color: "#1e293b", fontSize: "13px", marginBottom: "8px" }}>
+                Tier 1 Discount Range (e.g. {formData.tier1MinQty || 50}–{Math.max(Number(formData.tier1MinQty || 50), Number(formData.tier2MinQty || 200) - 1)} {formData.unit})
+              </div>
+              <div className="auth-two-fields">
+                <div>
+                  <label style={{ fontSize: "12px" }}>Starting Quantity ({formData.unit})</label>
+                  <input
+                    type="number"
+                    name="tier1MinQty"
+                    min="2"
+                    value={formData.tier1MinQty}
+                    onChange={handleChange}
+                    placeholder="50"
+                    required
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "12px" }}>Discount Percentage (%)</label>
+                  <input
+                    type="number"
+                    name="tier1DiscountPct"
+                    min="0"
+                    max="90"
+                    value={formData.tier1DiscountPct}
+                    onChange={handleChange}
+                    placeholder="10"
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Tier 2 Range */}
+            <div style={{ background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "12px" }}>
+              <div style={{ fontWeight: "700", color: "#1e293b", fontSize: "13px", marginBottom: "8px" }}>
+                Tier 2 Bulk Range (e.g. {formData.tier2MinQty || 200}+ {formData.unit})
+              </div>
+              <div className="auth-two-fields">
+                <div>
+                  <label style={{ fontSize: "12px" }}>Starting Quantity ({formData.unit})</label>
+                  <input
+                    type="number"
+                    name="tier2MinQty"
+                    min={Number(formData.tier1MinQty || 0) + 1}
+                    value={formData.tier2MinQty}
+                    onChange={handleChange}
+                    placeholder="200"
+                    required
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "12px" }}>Discount Percentage (%)</label>
+                  <input
+                    type="number"
+                    name="tier2DiscountPct"
+                    min="0"
+                    max="90"
+                    value={formData.tier2DiscountPct}
+                    onChange={handleChange}
+                    placeholder="20"
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Live Calculated Price Preview */}
+            {formData.price && Number(formData.price) > 0 && (
+              <div style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: "8px", padding: "10px 14px", marginTop: "12px", fontSize: "12px", color: "#14532d" }}>
+                <span style={{ fontWeight: 800 }}>✓ Calculated Selling Rates:</span>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "8px", marginTop: "6px" }}>
+                  <div>
+                    1–{Math.max(1, Number(formData.tier1MinQty || 50) - 1)} {formData.unit}:<br />
+                    <strong>₹{Number(formData.price).toFixed(2)}</strong> <small>(Standard)</small>
+                  </div>
+                  <div>
+                    {formData.tier1MinQty}–{Math.max(Number(formData.tier1MinQty || 50), Number(formData.tier2MinQty || 200) - 1)} {formData.unit}:<br />
+                    <strong style={{ color: "#15803d" }}>
+                      ₹{(Number(formData.price) * (1 - (Number(formData.tier1DiscountPct) || 0) / 100)).toFixed(2)}
+                    </strong>{" "}
+                    <small style={{ color: "#16a34a" }}>({formData.tier1DiscountPct || 0}% off)</small>
+                  </div>
+                  <div>
+                    {formData.tier2MinQty}+ {formData.unit}:<br />
+                    <strong style={{ color: "#15803d" }}>
+                      ₹{(Number(formData.price) * (1 - (Number(formData.tier2DiscountPct) || 0) / 100)).toFixed(2)}
+                    </strong>{" "}
+                    <small style={{ color: "#16a34a" }}>({formData.tier2DiscountPct || 0}% off)</small>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
 
           <label>Product Photo Preview</label>
           <div className="auth-preview-box">

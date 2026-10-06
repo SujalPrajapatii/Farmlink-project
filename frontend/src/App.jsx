@@ -6,6 +6,12 @@ import Register from "./pages/Register";
 import FarmerDashboard from "./pages/FarmerDashboard";
 import BusinessDashboard from "./pages/BusinessDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminOverview from "./pages/admin/AdminOverview";
+import AdminFarmers from "./pages/admin/AdminFarmers";
+import AdminBuyers from "./pages/admin/AdminBuyers";
+import AdminRiders from "./pages/admin/AdminRiders";
+import AdminProducts from "./pages/admin/AdminProducts";
+import AdminOrders from "./pages/admin/AdminOrders";
 import AddProduct from "./pages/AddProduct";
 import EditProduct from "./pages/EditProduct";
 import Checkout from "./pages/Checkout";
@@ -114,10 +120,16 @@ function App() {
           <Route path="/orders" element={<OrdersRoute />} />
           <Route path="/view-orders" element={<OrdersRoute />} />
           <Route path="/buyer-orders" element={<ProtectedRoute roles={["business", "farmer", "admin"]}><BuyerOrders /></ProtectedRoute>} />
-          <Route path="/admin-dashboard" element={<ProtectedRoute roles={["admin"]}><AdminDashboard /></ProtectedRoute>} />
+          <Route path="/admin-dashboard" element={<ProtectedRoute roles={["admin"]}><AdminOverview /></ProtectedRoute>} />
+          <Route path="/admin/overview" element={<ProtectedRoute roles={["admin"]}><AdminOverview /></ProtectedRoute>} />
+          <Route path="/admin/farmers" element={<ProtectedRoute roles={["admin"]}><AdminFarmers /></ProtectedRoute>} />
+          <Route path="/admin/buyers" element={<ProtectedRoute roles={["admin"]}><AdminBuyers /></ProtectedRoute>} />
+          <Route path="/admin/riders" element={<ProtectedRoute roles={["admin"]}><AdminRiders /></ProtectedRoute>} />
+          <Route path="/admin/products" element={<ProtectedRoute roles={["admin"]}><AdminProducts /></ProtectedRoute>} />
+          <Route path="/admin/orders" element={<ProtectedRoute roles={["admin"]}><AdminOrders /></ProtectedRoute>} />
           <Route path="/add-product" element={<ProtectedRoute roles={["farmer", "admin"]}><AddProduct /></ProtectedRoute>} />
           <Route path="/edit-product/:id" element={<ProtectedRoute roles={["farmer", "admin"]}><EditProduct /></ProtectedRoute>} />
-          <Route path="/checkout" element={<ProtectedRoute roles={["business", "farmer", "admin"]}><Checkout /></ProtectedRoute>} />
+          <Route path="/checkout" element={<ProtectedRoute roles={["business"]}><Checkout /></ProtectedRoute>} />
           <Route path="/orders/:id/tracking" element={<ProtectedRoute roles={["farmer", "business", "delivery", "admin"]}><OrderTracking /></ProtectedRoute>} />
           <Route path="/notifications" element={<ProtectedRoute roles={["business", "farmer", "admin"]}><BuyerNotifications /></ProtectedRoute>} />
           <Route path="/buyer-notifications" element={<ProtectedRoute roles={["business", "farmer", "admin"]}><BuyerNotifications /></ProtectedRoute>} />

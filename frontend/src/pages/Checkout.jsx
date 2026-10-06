@@ -27,6 +27,25 @@ function Checkout() {
 
   const accountType = currentUser?.accountType;
 
+  useEffect(() => {
+    if (!currentUser || currentUser.accountType !== "business") {
+      alert("Please login as buyer to purchase.");
+      if (currentUser?.accountType === "farmer") {
+        navigate("/farmer-dashboard", { replace: true });
+      } else if (currentUser?.accountType === "delivery") {
+        navigate("/delivery-dashboard", { replace: true });
+      } else if (currentUser?.accountType === "admin") {
+        navigate("/admin-dashboard", { replace: true });
+      } else {
+        navigate("/login", { replace: true });
+      }
+    }
+  }, [currentUser, navigate]);
+
+  if (!currentUser || currentUser.accountType !== "business") {
+    return null;
+  }
+
   const [addresses, setAddresses] = useState([]);
   const [selectedAddressId, setSelectedAddressId] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("COD");

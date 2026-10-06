@@ -1,0 +1,57 @@
+# ==========================================
+# Farmlink Master .gitignore
+# ==========================================
+
+# 1. Dependency directories
+node_modules/
+*/node_modules/
+package-lock.json.bak
+
+# 2. Environment and sensitive credentials (NEVER commit passwords or secrets)
+.env
+.env.local
+.env.*.local
+*.env
+backend/.env
+frontend/.env.local
+
+# 3. User Uploads & Media Assets created at runtime
+uploads/
+*/uploads/
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# 4. Build & Production Outputs
+dist/
+dist-ssr/
+build/
+out/
+.next/
+
+# 5. Runtime Logs & Debugging Files
+logs/
+*.log
+*.log.*
+server.log
+preview.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# 6. Python bytecode & generation caches
+__pycache__/
+*/__pycache__/
+*.py[cod]
+*$py.class
+test_puppeteer.pdf
+
+# 7. OS & Code Editor Configuration
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

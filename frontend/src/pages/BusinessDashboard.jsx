@@ -39,6 +39,11 @@ function BusinessDashboard() {
   }
 
   function addToCart(product) {
+    if (!currentUser || currentUser.accountType !== "business") {
+      alert("Please login as buyer to purchase.");
+      return;
+    }
+
     const requestedQuantity = Number(quantity[product.id] || 1);
     if (!Number.isInteger(requestedQuantity) || requestedQuantity < 1 || requestedQuantity > Number(product.quantity)) {
       alert(`Enter a whole quantity between 1 and ${product.quantity}.`);
